@@ -365,6 +365,7 @@ impl Interpreter {
                 self.evaluate(list)
             }
             Node::Comment(_) => Ok(0),
+            &parser::Node::VariableAssignmentCommand { .. } => todo!(),
         }
     }
 
@@ -606,6 +607,7 @@ impl Formatter {
                 result.push_str(comment);
                 result
             }
+            &parser::Node::VariableAssignmentCommand { .. } => todo!(),
         }
     }
 
