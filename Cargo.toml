@@ -6,3 +6,5 @@ description = "Mystical shell parser, formatter, and interpreter with Bash suppo
 license = "MIT"
 
 [dependencies]
+os_pipe = "1.2.1"
+libc = "0.2.172"
