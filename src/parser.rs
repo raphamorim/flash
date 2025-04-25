@@ -1,4 +1,4 @@
-use crate::Lexer;
+use crate::lexer::Lexer;
 use crate::lexer::Position;
 use crate::lexer::Token;
 use crate::lexer::TokenKind;
@@ -33,6 +33,10 @@ pub enum Node {
     VariableAssignmentCommand {
         assignments: Vec<Node>,
         command: Box<Node>,
+    },
+    ExtGlobPattern {
+        operator: char,        // ?, *, +, @, !
+        patterns: Vec<String>, // The pattern list inside the parentheses
     },
 }
 
@@ -83,7 +87,6 @@ impl Parser {
         self.peek_token = self.lexer.next_token();
     }
 
-    // Modify the parse_statement function to handle multiple variable assignments
     pub fn parse_statement(&mut self) -> Option<Node> {
         match self.current_token.kind {
             TokenKind::Word(ref _word) => {
@@ -101,8 +104,59 @@ impl Parser {
                 self.next_token();
                 Some(Node::Comment(comment))
             }
+            TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
             _ => None,
         }
+    }
+
+    // Add a method to parse extended glob patterns
+    fn parse_extglob(&mut self) -> Node {
+        let operator = match &self.current_token.kind {
+            TokenKind::ExtGlob(op) => *op,
+            _ => panic!("Expected an extended glob operator"),
+        };
+
+        self.next_token(); // Skip the operator token
+
+        // Parse patterns inside parentheses
+        let mut patterns = Vec::new();
+        let mut current_pattern = String::new();
+
+        // We expect to be at the beginning of the pattern list
+        // Keep reading until we reach the closing parenthesis
+        while self.current_token.kind != TokenKind::RParen
+            && self.current_token.kind != TokenKind::EOF
+        {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    current_pattern.push_str(word);
+                }
+                TokenKind::Pipe => {
+                    patterns.push(current_pattern);
+                    current_pattern = String::new();
+                }
+                _ => {
+                    // Other tokens will be part of the pattern or handled elsewhere
+                    if !current_pattern.is_empty() {
+                        patterns.push(current_pattern);
+                        current_pattern = String::new();
+                    }
+                }
+            }
+            self.next_token();
+        }
+
+        // Add the final pattern if not empty
+        if !current_pattern.is_empty() {
+            patterns.push(current_pattern);
+        }
+
+        // Skip the closing parenthesis
+        if self.current_token.kind == TokenKind::RParen {
+            self.next_token();
+        }
+
+        Node::ExtGlobPattern { operator, patterns }
     }
 
     // Fix for variable assignments
@@ -138,7 +192,6 @@ impl Parser {
         }
     }
 
-    // Enhance command parsing to handle quotes better
     pub fn parse_command(&mut self) -> Node {
         let name = match &self.current_token.kind {
             TokenKind::Word(word) => word.clone(),
@@ -156,6 +209,21 @@ impl Parser {
                 TokenKind::Word(word) => {
                     args.push(word.clone());
                     self.next_token();
+                }
+                TokenKind::ExtGlob(_) => {
+                    // Handle extended glob pattern in command arguments
+                    let extglob = self.parse_extglob();
+
+                    // Convert the ExtGlobPattern to a string representation
+                    let pattern_str = match &extglob {
+                        Node::ExtGlobPattern { operator, patterns } => {
+                            let patterns_joined = patterns.join("|");
+                            format!("{}({})", operator, patterns_joined)
+                        }
+                        _ => String::new(),
+                    };
+
+                    args.push(pattern_str);
                 }
                 TokenKind::Quote => {
                     // Start of a quoted string
@@ -1075,6 +1143,190 @@ esac
                     _ => panic!("Expected Command node"),
                 }
             }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_question_extglob() {
+        let input = "ls ?(file1|file2).txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args[0], "?(file1|file2).txt");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_star_extglob() {
+        let input = "ls *(file1|file2).txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args[0], "*(file1|file2).txt");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_plus_extglob() {
+        let input = "ls +(file1|file2).txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args[0], "+(file1|file2).txt");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_at_extglob() {
+        let input = "ls @(file1|file2).txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args[0], "@(file1|file2).txt");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_not_extglob() {
+        let input = "ls !(file1|file2).txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args[0], "!(file1|file2).txt");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_extglobs() {
+        let input = "find . -name ?(*.txt|*.log) -o -name +(*.md|*.rst)";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "find");
+                    assert_eq!(args[0], ".");
+                    assert_eq!(args[1], "-name");
+                    assert_eq!(args[2], "?(*.txt|*.log)");
+                    assert_eq!(args[3], "-o");
+                    assert_eq!(args[4], "-name");
+                    assert_eq!(args[5], "+(*.md|*.rst)");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_nested_extglobs() {
+        let input = "ls +(!(file1|file2)|file3).txt";
+        let result = parse_test(input);
+
+        // This test might require more complex parsing logic for nested patterns
+        // For now, just verify that parsing doesn't panic
+        // In a more complete implementation, we would verify the exact pattern structure
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, .. } => {
+                    assert_eq!(name, "ls");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_extglob_in_pipeline() {
+        let input = "ls ?(file1|file2).txt | grep pattern";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Pipeline { commands } => {
+                    assert_eq!(commands.len(), 2);
+
+                    match &commands[0] {
+                        Node::Command { name, args, .. } => {
+                            assert_eq!(name, "ls");
+                            assert_eq!(args[0], "?(file1|file2).txt");
+                        }
+                        _ => panic!("Expected Command node for first pipeline command"),
+                    }
+
+                    match &commands[1] {
+                        Node::Command { name, args, .. } => {
+                            assert_eq!(name, "grep");
+                            assert_eq!(args[0], "pattern");
+                        }
+                        _ => panic!("Expected Command node for second pipeline command"),
+                    }
+                }
+                _ => panic!("Expected Pipeline node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_extglob_in_redirection() {
+        let input = "cat <(grep pattern ?(file1|file2).txt)";
+
+        // This test might require additional parsing logic for process substitution
+        // Just verify it doesn't panic for now
+        let _result = parse_test(input);
+    }
+
+    #[test]
+    fn test_extglob_in_variable_assignment() {
+        let input = "FILES=?(*.txt|*.log)";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Assignment { name, value } => {
+                    assert_eq!(name, "FILES");
+                    // Check value based on how we're handling this in the implementation
+                }
+                _ => panic!("Expected Assignment node"),
+            },
             _ => panic!("Expected List node"),
         }
     }

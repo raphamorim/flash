@@ -3,7 +3,7 @@ name = "mystsh"
 version = "0.0.1"
 edition = "2024"
 description = "Mystical shell parser, formatter, and interpreter with Bash support"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 os_pipe = "1.2.1"

@@ -2,25 +2,26 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Word(String),
-    Assignment,  // =
-    Pipe,        // |
-    Semicolon,   // ;
-    Newline,     // \n
-    And,         // &&
-    Or,          // ||
-    LParen,      // (
-    RParen,      // )
-    LBrace,      // {
-    RBrace,      // }
-    Less,        // <
-    Great,       // >
-    DGreat,      // >>
-    Dollar,      // $
-    Quote,       // "
-    SingleQuote, // '
-    Backtick,    // `
-    Comment,     // #
-    CmdSubst,    // $(
+    Assignment,    // =
+    Pipe,          // |
+    Semicolon,     // ;
+    Newline,       // \n
+    And,           // &&
+    Or,            // ||
+    LParen,        // (
+    RParen,        // )
+    LBrace,        // {
+    RBrace,        // }
+    Less,          // <
+    Great,         // >
+    DGreat,        // >>
+    Dollar,        // $
+    Quote,         // "
+    SingleQuote,   // '
+    Backtick,      // `
+    Comment,       // #
+    CmdSubst,      // $(
+    ExtGlob(char), // For ?(, *(, +(, @(, !(
     EOF,
 }
 
@@ -48,7 +49,7 @@ impl Position {
 fn is_special_char(ch: char) -> bool {
     match ch {
         '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '{' | '}' | '<' | '>' | '$' | '"' | '\''
-        | '`' | '#' => true,
+        | '`' | '#' | '?' | '*' | '+' | '@' | '!' => true,
         _ => false,
     }
 }
@@ -222,6 +223,21 @@ impl Lexer {
                 value: "`".to_string(),
                 position: current_position,
             },
+            // Check for extended glob patterns
+            '?' | '*' | '+' | '@' | '!' => {
+                if self.peek_char() == '(' {
+                    let glob_char = self.ch;
+                    self.read_char(); // Consume the '('
+                    Token {
+                        kind: TokenKind::ExtGlob(glob_char),
+                        value: format!("{}{}", glob_char, "("),
+                        position: current_position,
+                    }
+                } else {
+                    // If not followed by '(', treat as a regular word
+                    self.read_word()
+                }
+            }
             '#' => self.read_comment(),
             '\0' => Token {
                 kind: TokenKind::EOF,

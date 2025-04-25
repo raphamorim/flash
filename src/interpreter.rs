@@ -1,0 +1,453 @@
+use crate::lexer::Lexer;
+use crate::parser::Node;
+use crate::parser::Parser;
+use crate::parser::RedirectKind;
+use std::collections::HashMap;
+use std::env;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::os::fd::AsRawFd;
+use std::process::{Command, Stdio};
+
+/// Shell interpreter
+pub struct Interpreter {
+    variables: HashMap<String, String>,
+    last_exit_code: i32,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        let mut variables = HashMap::new();
+
+        // Initialize some basic environment variables
+        for (key, value) in env::vars() {
+            variables.insert(key, value);
+        }
+
+        // Set up some shell variables
+        variables.insert("?".to_string(), "0".to_string());
+        variables.insert("SHELL".to_string(), "bash".to_string());
+
+        Self {
+            variables,
+            last_exit_code: 0,
+        }
+    }
+
+    pub fn run_interactive(&mut self) -> io::Result<()> {
+        let mut buffer = String::new();
+        let stdin = io::stdin();
+        let mut stdout = io::stdout();
+
+        loop {
+            stdout.write_all(b"$ ")?;
+            stdout.flush()?;
+
+            buffer.clear();
+            stdin.read_line(&mut buffer)?;
+
+            if buffer.trim() == "exit" {
+                break;
+            }
+
+            let result = self.execute(&buffer);
+
+            match result {
+                Ok(code) => {
+                    self.last_exit_code = code;
+                    self.variables.insert("?".to_string(), code.to_string());
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                    self.last_exit_code = 1;
+                    self.variables.insert("?".to_string(), "1".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn execute(&mut self, input: &str) -> Result<i32, io::Error> {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let ast = parser.parse_script();
+
+        self.evaluate(&ast)
+    }
+
+    fn evaluate(&mut self, node: &Node) -> Result<i32, io::Error> {
+        match node {
+            Node::Command {
+                name,
+                args,
+                redirects,
+            } => {
+                // Handle built-in commands
+                match name.as_str() {
+                    "cd" => {
+                        let dir = if args.is_empty() {
+                            env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                        } else {
+                            args[0].clone()
+                        };
+
+                        match env::set_current_dir(&dir) {
+                            Ok(_) => {
+                                self.variables.insert(
+                                    "PWD".to_string(),
+                                    env::current_dir()?.to_string_lossy().to_string(),
+                                );
+                                Ok(0)
+                            }
+                            Err(e) => {
+                                eprintln!("cd: {}: {}", dir, e);
+                                Ok(1)
+                            }
+                        }
+                    }
+                    "echo" => {
+                        // Simple echo implementation
+                        for (i, arg) in args.iter().enumerate() {
+                            print!("{}{}", if i > 0 { " " } else { "" }, arg);
+                        }
+                        println!();
+                        Ok(0)
+                    }
+                    "export" => {
+                        for arg in args {
+                            if let Some(pos) = arg.find('=') {
+                                let (key, value) = arg.split_at(pos);
+                                let value = &value[1..]; // Skip the '='
+                                self.variables.insert(key.to_string(), value.to_string());
+                                unsafe {
+                                    env::set_var(key, value);
+                                }
+                            } else {
+                                // Just export an existing variable to the environment
+                                if let Some(value) = self.variables.get(arg) {
+                                    unsafe {
+                                        env::set_var(arg, value);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(0)
+                    }
+                    "source" | "." => {
+                        if args.is_empty() {
+                            eprintln!("source: filename argument required");
+                            return Ok(1);
+                        }
+
+                        let filename = &args[0];
+                        match fs::read_to_string(filename) {
+                            Ok(content) => self.execute(&content),
+                            Err(e) => {
+                                eprintln!("source: {}: {}", filename, e);
+                                Ok(1)
+                            }
+                        }
+                    }
+                    _ => {
+                        // External command
+                        let mut command = Command::new(name);
+                        command.args(args);
+
+                        // Handle redirections
+                        for redirect in redirects {
+                            match redirect.kind {
+                                RedirectKind::Input => {
+                                    let file = fs::File::open(&redirect.file)?;
+                                    command.stdin(Stdio::from(file));
+                                }
+                                RedirectKind::Output => {
+                                    let file = fs::File::create(&redirect.file)?;
+                                    command.stdout(Stdio::from(file));
+                                }
+                                RedirectKind::Append => {
+                                    let file = fs::OpenOptions::new()
+                                        .write(true)
+                                        .create(true)
+                                        .append(true)
+                                        .open(&redirect.file)?;
+                                    command.stdout(Stdio::from(file));
+                                }
+                            }
+                        }
+
+                        // Set environment variables
+                        for (key, value) in &self.variables {
+                            command.env(key, value);
+                        }
+
+                        match command.status() {
+                            Ok(status) => Ok(status.code().unwrap_or(0)),
+                            Err(e) => {
+                                eprintln!("{}: command not found", name);
+                                Ok(127) // Command not found
+                            }
+                        }
+                    }
+                }
+            }
+            Node::Pipeline { commands } => {
+                // Handle pipeline with proper piping
+                if commands.is_empty() {
+                    return Ok(0);
+                }
+
+                if commands.len() == 1 {
+                    return self.evaluate(&commands[0]);
+                }
+
+                // For multiple commands, set up pipes
+                let mut previous_output: Option<std::process::ChildStdout> = None;
+                let commands_count = commands.len();
+
+                for (i, command) in commands.iter().enumerate() {
+                    match command {
+                        Node::Command {
+                            name,
+                            args,
+                            redirects,
+                        } => {
+                            let mut cmd = Command::new(name);
+                            cmd.args(args);
+
+                            // Set up stdin from previous command's stdout
+                            if let Some(output) = previous_output.take() {
+                                cmd.stdin(Stdio::from(output));
+                            }
+
+                            // Set up stdout pipe for all but the last command
+                            if i < commands_count - 1 {
+                                cmd.stdout(Stdio::piped());
+                            }
+
+                            // Apply redirects
+                            for redirect in redirects {
+                                match redirect.kind {
+                                    RedirectKind::Input => {
+                                        if i == 0 {
+                                            // Only apply input redirect to first command
+                                            let file = fs::File::open(&redirect.file)?;
+                                            cmd.stdin(Stdio::from(file));
+                                        }
+                                    }
+                                    RedirectKind::Output => {
+                                        if i == commands_count - 1 {
+                                            // Only apply output redirect to last command
+                                            let file = fs::File::create(&redirect.file)?;
+                                            cmd.stdout(Stdio::from(file));
+                                        }
+                                    }
+                                    RedirectKind::Append => {
+                                        if i == commands_count - 1 {
+                                            // Only apply append redirect to last command
+                                            let file = fs::OpenOptions::new()
+                                                .write(true)
+                                                .create(true)
+                                                .append(true)
+                                                .open(&redirect.file)?;
+                                            cmd.stdout(Stdio::from(file));
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Set environment variables
+                            for (key, value) in &self.variables {
+                                cmd.env(key, value);
+                            }
+
+                            // Execute the command
+                            let mut child = cmd.spawn()?;
+
+                            // For all but the last command, capture the stdout
+                            if i < commands_count - 1 {
+                                previous_output = child.stdout.take();
+                            } else {
+                                // Wait for the last command to finish
+                                let status = child.wait()?;
+                                return Ok(status.code().unwrap_or(0));
+                            }
+                        }
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                "Expected a Command in the pipeline",
+                            ));
+                        }
+                    }
+                }
+
+                Ok(0)
+            }
+            Node::List {
+                statements,
+                operators,
+            } => {
+                let mut last_exit_code = 0;
+
+                for (i, statement) in statements.iter().enumerate() {
+                    last_exit_code = self.evaluate(statement)?;
+
+                    // Check operators for control flow
+                    if i < operators.len() {
+                        match operators[i].as_str() {
+                            "&&" => {
+                                if last_exit_code != 0 {
+                                    // Short-circuit on failure
+                                    break;
+                                }
+                            }
+                            "||" => {
+                                if last_exit_code == 0 {
+                                    // Short-circuit on success
+                                    break;
+                                }
+                            }
+                            _ => {} // Continue normally for ";" and "\n"
+                        }
+                    }
+                }
+
+                Ok(last_exit_code)
+            }
+            Node::Assignment { name, value } => {
+                // Handle different types of values for assignment
+                match &**value {
+                    Node::StringLiteral(string_value) => {
+                        // Expand variables in the value
+                        let expanded_value = self.expand_variables(string_value);
+                        self.variables.insert(name.clone(), expanded_value);
+                    }
+                    Node::CommandSubstitution { command } => {
+                        // Execute command and capture output
+                        let output = self.capture_command_output(command)?;
+                        self.variables.insert(name.clone(), output);
+                    }
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "Unsupported value type for assignment",
+                        ));
+                    }
+                }
+                Ok(0)
+            }
+            Node::CommandSubstitution { command: _ } => {
+                // This should be handled by the caller
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Unexpected command substitution node",
+                ))
+            }
+            Node::StringLiteral(_value) => {
+                // Just a placeholder, should be handled by parent node
+                Ok(0)
+            }
+            Node::Subshell { list } => {
+                // Not implemented: proper subshell environment
+                // This just evaluates the list in the current environment
+                self.evaluate(list)
+            }
+            Node::Comment(_) => Ok(0),
+            Node::VariableAssignmentCommand { .. } => todo!(),
+            Node::ExtGlobPattern { .. } => todo!(),
+        }
+    }
+
+    // Method to capture command output for command substitution
+    fn capture_command_output(&mut self, node: &Node) -> Result<String, io::Error> {
+        // Create a temporary interpreter for the subshell
+        let mut temp_interpreter = Interpreter::new();
+
+        // Copy all variables to the temporary interpreter
+        for (key, value) in &self.variables {
+            temp_interpreter
+                .variables
+                .insert(key.clone(), value.clone());
+        }
+
+        // Set up pipes to capture stdout
+        let (mut reader, writer) = os_pipe::pipe()?;
+        let writer_clone = writer.try_clone()?;
+
+        // Temporarily replace stdout
+        let _old_stdout = std::io::stdout();
+        let _handle = unsafe {
+            let writer_raw_fd = writer.as_raw_fd();
+            libc::dup2(writer_raw_fd, libc::STDOUT_FILENO)
+        };
+
+        // Execute the command
+        let exit_code = temp_interpreter.evaluate(node)?;
+
+        // Close the write end to avoid deadlock
+        drop(writer);
+        drop(writer_clone);
+
+        // Read the output
+        let mut output = String::new();
+        reader.read_to_string(&mut output)?;
+
+        // Trim the trailing newline if present
+        if output.ends_with('\n') {
+            output.pop();
+        }
+
+        // Check exit code
+        if exit_code != 0 {
+            self.last_exit_code = exit_code;
+            self.variables
+                .insert("?".to_string(), exit_code.to_string());
+        }
+
+        Ok(output)
+    }
+
+    fn expand_variables(&self, input: &str) -> String {
+        let mut result = String::new();
+        let mut chars = input.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '$' && chars.peek().is_some() {
+                let mut var_name = String::new();
+
+                // Variable can be specified as ${VAR} or $VAR
+                if let Some(&'{') = chars.peek() {
+                    chars.next(); // Skip '{'
+
+                    // Read until closing brace
+                    while let Some(c) = chars.next() {
+                        if c == '}' {
+                            break;
+                        }
+                        var_name.push(c);
+                    }
+                } else {
+                    // Read until non-alphanumeric character
+                    while let Some(&c) = chars.peek() {
+                        if c.is_alphanumeric() || c == '_' {
+                            var_name.push(c);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // Replace with variable value if exists
+                if let Some(value) = self.variables.get(&var_name) {
+                    result.push_str(value);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+
+        result
+    }
+}
