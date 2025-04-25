@@ -243,40 +243,41 @@ impl Lexer {
     fn read_word(&mut self) -> Token {
         let position = Position::new(self.line, self.column);
         let mut word = String::new();
-        
+
         // Check for extglob pattern prefixes
-        if (self.ch == '?' || self.ch == '*' || self.ch == '+' || self.ch == '@' || self.ch == '!') 
-           && self.peek_char() == '(' {
-        let peek = self.peek_char();
-        if peek == '(' {
+        if (self.ch == '?' || self.ch == '*' || self.ch == '+' || self.ch == '@' || self.ch == '!')
+            && self.peek_char() == '('
+        {
+            let peek = self.peek_char();
+            if peek == '(' {
                 // This is an extglob pattern
                 word.push(self.ch); // Add the operator
-                
+
                 self.read_char(); // Move past the operator
                 word.push(self.ch); // Add the open paren
                 self.read_char(); // Move past the open paren
-                
+
                 // Read until matching closing paren, accounting for nesting
                 let mut depth = 1;
-                
+
                 while depth > 0 && self.ch != '\0' {
                     if self.ch == '(' {
                         depth += 1;
                     } else if self.ch == ')' {
                         depth -= 1;
                     }
-                    
+
                     word.push(self.ch);
                     self.read_char();
                 }
-                
+
                 // After finding the closing parenthesis, continue reading
                 // any suffixes (like ".txt") that should be part of the pattern
                 while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
                     word.push(self.ch);
                     self.read_char();
                 }
-                
+
                 return Token {
                     kind: TokenKind::Word(word.clone()),
                     value: word,
@@ -284,16 +285,22 @@ impl Lexer {
                 };
             }
         }
-        
+
         // Normal word handling
         while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
             word.push(self.ch);
             self.read_char();
         }
-        
+
         // For normal words including glob patterns
-        while !self.ch.is_whitespace() && self.ch != '\0' && 
-              (self.ch == '*' || self.ch == '?' || self.ch == '[' || self.ch == ']' || !is_special_char(self.ch)) {
+        while !self.ch.is_whitespace()
+            && self.ch != '\0'
+            && (self.ch == '*'
+                || self.ch == '?'
+                || self.ch == '['
+                || self.ch == ']'
+                || !is_special_char(self.ch))
+        {
             word.push(self.ch);
             self.read_char();
         }

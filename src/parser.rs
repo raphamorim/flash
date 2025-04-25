@@ -163,10 +163,10 @@ impl Parser {
             self.next_token();
         }
 
-        Node::ExtGlobPattern { 
-            operator, 
+        Node::ExtGlobPattern {
+            operator,
             patterns,
-            suffix 
+            suffix,
         }
     }
 
@@ -227,7 +227,11 @@ impl Parser {
 
                     // Convert the ExtGlobPattern to a string representation
                     let pattern_str = match &extglob {
-                        Node::ExtGlobPattern { operator, patterns, suffix } => {
+                        Node::ExtGlobPattern {
+                            operator,
+                            patterns,
+                            suffix,
+                        } => {
                             let patterns_joined = patterns.join("|");
                             format!("{}({}){}", operator, patterns_joined, suffix)
                         }
@@ -237,28 +241,51 @@ impl Parser {
                     args.push(pattern_str);
                 }
                 TokenKind::Quote => {
-                    // Start of a quoted string
-                    self.next_token(); // Skip quote symbol
+                    // Start of a double quoted string
+                    self.next_token(); // Skip double quote symbol
 
                     let mut quoted_string = String::new();
 
                     // Collect all tokens until the closing quote
-                    while let TokenKind::Word(word) = &self.current_token.kind {
-                        if !quoted_string.is_empty() {
-                            quoted_string.push(' ');
+                    while self.current_token.kind != TokenKind::Quote
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        if let TokenKind::Word(word) = &self.current_token.kind {
+                            if !quoted_string.is_empty() {
+                                quoted_string.push(' ');
+                            }
+                            quoted_string.push_str(word);
                         }
-                        quoted_string.push_str(word);
                         self.next_token();
-
-                        // Handle embedded single quotes
-                        if let TokenKind::SingleQuote = self.current_token.kind {
-                            quoted_string.push('\'');
-                            self.next_token();
-                        }
                     }
 
                     if let TokenKind::Quote = self.current_token.kind {
                         self.next_token(); // Skip closing quote
+                    }
+
+                    args.push(quoted_string);
+                }
+                TokenKind::SingleQuote => {
+                    // Start of a single quoted string
+                    self.next_token(); // Skip single quote symbol
+
+                    let mut quoted_string = String::new();
+
+                    // Collect all tokens until the closing single quote
+                    while self.current_token.kind != TokenKind::SingleQuote
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        if let TokenKind::Word(word) = &self.current_token.kind {
+                            if !quoted_string.is_empty() {
+                                quoted_string.push(' ');
+                            }
+                            quoted_string.push_str(word);
+                        }
+                        self.next_token();
+                    }
+
+                    if let TokenKind::SingleQuote = self.current_token.kind {
+                        self.next_token(); // Skip closing single quote
                     }
 
                     args.push(quoted_string);
