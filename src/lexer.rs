@@ -49,7 +49,8 @@ impl Position {
 fn is_special_char(ch: char) -> bool {
     match ch {
         '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '{' | '}' | '<' | '>' | '$' | '"' | '\''
-        | '`' | '#' | '?' | '*' | '+' | '@' | '!' => true,
+        | '`' | '#' => true,
+        // Removed '?', '*', '+', '@', '!' to allow them in normal words
         _ => false,
     }
 }
@@ -223,21 +224,6 @@ impl Lexer {
                 value: "`".to_string(),
                 position: current_position,
             },
-            // Check for extended glob patterns
-            '?' | '*' | '+' | '@' | '!' => {
-                if self.peek_char() == '(' {
-                    let glob_char = self.ch;
-                    self.read_char(); // Consume the '('
-                    Token {
-                        kind: TokenKind::ExtGlob(glob_char),
-                        value: format!("{}{}", glob_char, "("),
-                        position: current_position,
-                    }
-                } else {
-                    // If not followed by '(', treat as a regular word
-                    self.read_word()
-                }
-            }
             '#' => self.read_comment(),
             '\0' => Token {
                 kind: TokenKind::EOF,
@@ -247,15 +233,67 @@ impl Lexer {
             _ => self.read_word(),
         };
 
-        self.read_char();
+        if token.kind != TokenKind::Word(String::new()) {
+            self.read_char();
+        }
+
         token
     }
 
     fn read_word(&mut self) -> Token {
         let position = Position::new(self.line, self.column);
         let mut word = String::new();
-
+        
+        // Check for extglob pattern prefixes
+        if (self.ch == '?' || self.ch == '*' || self.ch == '+' || self.ch == '@' || self.ch == '!') 
+           && self.peek_char() == '(' {
+        let peek = self.peek_char();
+        if peek == '(' {
+                // This is an extglob pattern
+                word.push(self.ch); // Add the operator
+                
+                self.read_char(); // Move past the operator
+                word.push(self.ch); // Add the open paren
+                self.read_char(); // Move past the open paren
+                
+                // Read until matching closing paren, accounting for nesting
+                let mut depth = 1;
+                
+                while depth > 0 && self.ch != '\0' {
+                    if self.ch == '(' {
+                        depth += 1;
+                    } else if self.ch == ')' {
+                        depth -= 1;
+                    }
+                    
+                    word.push(self.ch);
+                    self.read_char();
+                }
+                
+                // After finding the closing parenthesis, continue reading
+                // any suffixes (like ".txt") that should be part of the pattern
+                while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
+                    word.push(self.ch);
+                    self.read_char();
+                }
+                
+                return Token {
+                    kind: TokenKind::Word(word.clone()),
+                    value: word,
+                    position,
+                };
+            }
+        }
+        
+        // Normal word handling
         while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
+            word.push(self.ch);
+            self.read_char();
+        }
+        
+        // For normal words including glob patterns
+        while !self.ch.is_whitespace() && self.ch != '\0' && 
+              (self.ch == '*' || self.ch == '?' || self.ch == '[' || self.ch == ']' || !is_special_char(self.ch)) {
             word.push(self.ch);
             self.read_char();
         }
