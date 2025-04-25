@@ -952,7 +952,7 @@ done < input.txt
         match result {
             Node::List { statements, .. } => {
                 match &statements[0] {
-                    Node::Command { name, args, .. } => {
+                    Node::Command { name,  .. } => {
                         assert_eq!(name, "echo");
                         // Additional validation would be complex
                     }
@@ -975,19 +975,37 @@ EOF"#;
         let _result = parse_test(input);
     }
 
-    //     #[test]
-    //     fn test_background_execution() {
-    //         let input = "long_running_command &";
-    //         let result = parse_test(input);
+    #[test]
+    fn test_background_execution() {
+        let input = "long_running_command &";
+        let result = parse_test(input);
 
-    //         match result {
-    //             Node::List { operators, .. } => {
-    //                 assert_eq!(operators.len(), 1);
-    //                 assert_eq!(operators[0], "&");
-    //             }
-    //             _ => panic!("Expected List node"),
-    //         }
-    //     }
+        match result {
+            Node::List { operators, .. } => {
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "&");
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_redirect_with_file_descriptor() {
+        let input = "command 2>&1";
+
+        // This would require additional parsing logic not present in the current code
+        // Just verify it doesn't panic
+        let _result = parse_test(input);
+    }
+
+    #[test]
+    fn test_redirect_to_dev_null() {
+        let input = "command > /dev/null 2>&1";
+
+        // This would require additional parsing logic not present in the current code
+        // Just verify it doesn't panic
+        let _result = parse_test(input);
+    }
 
     #[test]
     fn test_brace_expansion() {
@@ -1359,7 +1377,7 @@ esac
 
         match result {
             Node::List { statements, .. } => match &statements[0] {
-                Node::Assignment { name, value } => {
+                Node::Assignment { name, value: _ } => {
                     assert_eq!(name, "FILES");
                     // Check value based on how we're handling this in the implementation
                 }
@@ -1404,7 +1422,7 @@ esac
 
         match result {
             Node::List {
-                statements,
+                statements: _,
                 operators,
             } => {
                 // Just check that the operators are recognized
@@ -1499,22 +1517,4 @@ package() {
         let result = parse_test(content);
         println!("{:?}", result);
     }
-
-    // #[test]
-    // fn test_redirect_with_file_descriptor() {
-    //     let input = "command 2>&1";
-
-    //     // This would require additional parsing logic not present in the current code
-    //     // Just verify it doesn't panic
-    //     let _result = parse_test(input);
-    // }
-
-    // #[test]
-    // fn test_redirect_to_dev_null() {
-    //     let input = "command > /dev/null 2>&1";
-
-    //     // This would require additional parsing logic not present in the current code
-    //     // Just verify it doesn't panic
-    //     let _result = parse_test(input);
-    // }
 }
