@@ -5,6 +5,11 @@ edition = "2024"
 description = "Mystical shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"
 
+[features]
+default = ["formatter", "interpreter"]
+formatter = []
+interpreter = ["os_pipe", "libc"]
+
 [dependencies]
-os_pipe = "1.2.1"
-libc = "0.2.172"
+os_pipe = { version = "1.2.1", optional = true }
+libc = { version = "0.2.172", optional = true }

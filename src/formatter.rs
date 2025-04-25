@@ -155,3 +155,13 @@ impl Formatter {
         }
     }
 }
+
+//     #[test]
+//     fn test_formatter() {
+//         let input = "if [ -f /etc/bashrc ]; then\nsource /etc/bashrc\nfi";
+//         let formatted = format_script_with_options(input, " ", 0);
+
+//         // This is a simplified test. In a real formatter, this would actually parse the if/then/fi
+//         // constructs correctly
+//         assert!(formatted.contains("source /etc/bashrc"));
+//     }
