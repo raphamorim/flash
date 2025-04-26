@@ -170,7 +170,6 @@ impl Parser {
         }
     }
 
-    // Fix for variable assignments
     pub fn parse_assignment(&mut self) -> Node {
         let name = match &self.current_token.kind {
             TokenKind::Word(word) => word.clone(),
@@ -180,22 +179,63 @@ impl Parser {
         self.next_token(); // Skip variable name
         self.next_token(); // Skip '='
 
-        // Check if this is a command substitution
-        if self.current_token.kind == TokenKind::CmdSubst {
-            let cmd_substitution = self.parse_command_substitution();
-            return Node::Assignment {
-                name,
-                value: Box::new(cmd_substitution),
-            };
-        }
+        // Check for quotes
+        let value = match self.current_token.kind {
+            TokenKind::Quote => {
+                // Handle double quoted string
+                self.next_token(); // Skip opening quote
 
-        // Regular string value
-        let value = match &self.current_token.kind {
-            TokenKind::Word(word) => word.clone(),
-            _ => String::new(),
+                let mut quoted_value = String::new();
+                while self.current_token.kind != TokenKind::Quote
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    if let TokenKind::Word(word) = &self.current_token.kind {
+                        quoted_value.push_str(word);
+                    }
+                    self.next_token();
+                }
+
+                if self.current_token.kind == TokenKind::Quote {
+                    self.next_token(); // Skip closing quote
+                }
+
+                quoted_value
+            }
+            TokenKind::SingleQuote => {
+                // Handle single quoted string
+                self.next_token(); // Skip opening quote
+
+                let mut quoted_value = String::new();
+                while self.current_token.kind != TokenKind::SingleQuote
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    if let TokenKind::Word(word) = &self.current_token.kind {
+                        quoted_value.push_str(word);
+                    }
+                    self.next_token();
+                }
+
+                if self.current_token.kind == TokenKind::SingleQuote {
+                    self.next_token(); // Skip closing quote
+                }
+
+                quoted_value
+            }
+            TokenKind::CmdSubst => {
+                return Node::Assignment {
+                    name,
+                    value: Box::new(self.parse_command_substitution()),
+                };
+            }
+            TokenKind::Word(ref word) => {
+                let value = word.clone();
+                self.next_token(); // Skip value
+                value
+            }
+            _ => {
+                String::new() // Handle unexpected token type
+            }
         };
-
-        self.next_token(); // Skip value
 
         Node::Assignment {
             name,
@@ -613,23 +653,6 @@ mod parser_tests {
         parser.parse_script()
     }
 
-    // Helper function to create a simple command node for comparison
-    fn make_command(name: &str, args: Vec<&str>, redirects: Vec<Redirect>) -> Node {
-        Node::Command {
-            name: name.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
-            redirects,
-        }
-    }
-
-    // Helper function to create a redirect
-    fn make_redirect(kind: RedirectKind, file: &str) -> Redirect {
-        Redirect {
-            kind,
-            file: file.to_string(),
-        }
-    }
-
     #[test]
     fn test_simple_command() {
         let input = "echo hello world";
@@ -882,7 +905,6 @@ mod parser_tests {
 # Script to process logs
 LOG_DIR="/var/log"
 OUTPUT=$(find $LOG_DIR -name "*.log" | grep error)
-
 if [ -n "$OUTPUT" ]; then
     echo "Found error logs" > results.txt
     cat $OUTPUT >> results.txt
@@ -890,10 +912,187 @@ else
     echo "No error logs found" > results.txt
 fi
 "#;
-
         // This test just checks that parsing doesn't panic
-        let _result = parse_test(input);
-        // Full structure validation would be too complex for this test
+        let result = parse_test(input);
+
+        assert_eq!(format!("{:?}", result), "a");
+        // Verify we got a List node at the top level
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                // Verify we have multiple statements
+                assert!(!statements.is_empty());
+                // Verify we have sufficient operators between statements
+                assert_eq!(operators.len(), statements.len() - 1);
+
+                // Check for expected node types within the script
+
+                // 1. Verify there's at least one comment node
+                let has_comment = statements
+                    .iter()
+                    .any(|node| matches!(node, Node::Comment(_)));
+                assert!(has_comment, "Script should contain at least one comment");
+
+                // 2. Verify there's at least one assignment node
+                let has_assignment = statements
+                    .iter()
+                    .any(|node| matches!(node, Node::Assignment { .. }));
+                assert!(
+                    has_assignment,
+                    "Script should contain at least one variable assignment"
+                );
+
+                // 3. Verify there's at least one command substitution
+                let has_cmd_subst = statements.iter().any(|node| {
+                    fn has_cmd_substitution(node: &Node) -> bool {
+                        match node {
+                            Node::CommandSubstitution { .. } => true,
+                            Node::Assignment { value, .. } => has_cmd_substitution(value),
+                            _ => false,
+                        }
+                    }
+                    has_cmd_substitution(node)
+                });
+                assert!(
+                    has_cmd_subst,
+                    "Script should contain at least one command substitution"
+                );
+
+                // 4. Verify there's at least one pipeline
+                let has_pipeline = statements.iter().any(|node| {
+                    fn contains_pipeline(node: &Node) -> bool {
+                        match node {
+                            Node::Pipeline { .. } => true,
+                            Node::CommandSubstitution { command } => contains_pipeline(command),
+                            Node::List { statements, .. } => {
+                                statements.iter().any(contains_pipeline)
+                            }
+                            Node::Subshell { list } => contains_pipeline(list),
+                            _ => false,
+                        }
+                    }
+                    contains_pipeline(node)
+                });
+                assert!(has_pipeline, "Script should contain at least one pipeline");
+
+                // 5. Verify there's at least one redirection
+                let has_redirection = statements.iter().any(|node| {
+                    fn contains_redirection(node: &Node) -> bool {
+                        match node {
+                            Node::Command { redirects, .. } => !redirects.is_empty(),
+                            Node::Pipeline { commands } => {
+                                commands.iter().any(contains_redirection)
+                            }
+                            Node::List { statements, .. } => {
+                                statements.iter().any(contains_redirection)
+                            }
+                            Node::Subshell { list } => contains_redirection(list),
+                            Node::CommandSubstitution { command } => contains_redirection(command),
+                            _ => false,
+                        }
+                    }
+                    contains_redirection(node)
+                });
+                assert!(
+                    has_redirection,
+                    "Script should contain at least one redirection"
+                );
+
+                // 6. Check for string literals (quoted strings)
+                let has_string_literal = statements.iter().any(|node| {
+                    fn contains_string_literal(node: &Node) -> bool {
+                        match node {
+                            Node::StringLiteral(_) => true,
+                            Node::Command { args, .. } => !args.is_empty(), // Simplified check for arguments
+                            Node::Assignment { value, .. } => {
+                                matches!(**value, Node::StringLiteral(_))
+                            }
+                            Node::List { statements, .. } => {
+                                statements.iter().any(contains_string_literal)
+                            }
+                            Node::Pipeline { commands } => {
+                                commands.iter().any(contains_string_literal)
+                            }
+                            Node::Subshell { list } => contains_string_literal(list),
+                            Node::CommandSubstitution { command } => {
+                                contains_string_literal(command)
+                            }
+                            _ => false,
+                        }
+                    }
+                    contains_string_literal(node)
+                });
+                assert!(
+                    has_string_literal,
+                    "Script should contain at least one string literal"
+                );
+
+                // 7. Check for if-else control structure (implementation depends on how your parser handles conditionals)
+                // This is a simplified check - you may need to adapt it to your specific AST structure
+                let has_if_structure = statements.iter().any(|node| {
+                    fn check_command_name(node: &Node, name: &str) -> bool {
+                        match node {
+                            Node::Command { name: cmd_name, .. } => cmd_name == name,
+                            _ => false,
+                        }
+                    }
+
+                    // This is a simple heuristic - you might need to refine this based on your actual AST structure
+                    match node {
+                        Node::Command { name, .. } => {
+                            name == "if" || name == "fi" || name == "else"
+                        }
+                        Node::List { statements, .. } => {
+                            let commands: Vec<&str> = statements
+                                .iter()
+                                .filter_map(|n| {
+                                    if let Node::Command { name, .. } = n {
+                                        Some(name.as_str())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+
+                            commands.contains(&"if")
+                                || commands.contains(&"fi")
+                                || commands.contains(&"else")
+                        }
+                        _ => false,
+                    }
+                });
+                assert!(
+                    has_if_structure,
+                    "Script should contain if-else control structure"
+                );
+
+                // 8. Check for extended glob patterns if your script contains any
+                let has_ext_glob = statements.iter().any(|node| {
+                    fn contains_ext_glob(node: &Node) -> bool {
+                        match node {
+                            Node::ExtGlobPattern { .. } => true,
+                            Node::Command { args, .. } => {
+                                args.iter().any(|arg| arg.contains("*.log"))
+                            }
+                            Node::List { statements, .. } => {
+                                statements.iter().any(contains_ext_glob)
+                            }
+                            Node::Pipeline { commands } => commands.iter().any(contains_ext_glob),
+                            Node::CommandSubstitution { command } => contains_ext_glob(command),
+                            _ => false,
+                        }
+                    }
+                    contains_ext_glob(node)
+                });
+                assert!(
+                    has_ext_glob,
+                    "Script should contain at least one glob pattern"
+                );
+            }
+            _ => panic!("Expected a List node for the script"),
+        }
     }
 
     #[test]
@@ -960,7 +1159,7 @@ done < input.txt
         match result {
             Node::List { statements, .. } => {
                 match &statements[0] {
-                    Node::Command { name,  .. } => {
+                    Node::Command { name, .. } => {
                         assert_eq!(name, "echo");
                         // Additional validation would be complex
                     }

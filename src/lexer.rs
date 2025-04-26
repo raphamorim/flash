@@ -146,7 +146,7 @@ impl Lexer {
                         position: current_position,
                     }
                 }
-            },
+            }
             '\n' => {
                 self.line += 1;
                 self.column = 0;
@@ -155,7 +155,7 @@ impl Lexer {
                     value: "\n".to_string(),
                     position: current_position,
                 }
-            },
+            }
             '(' => Token {
                 kind: TokenKind::LParen,
                 value: "(".to_string(),
@@ -196,7 +196,7 @@ impl Lexer {
                         position: current_position,
                     }
                 }
-            },
+            }
             '$' => {
                 // Check for command substitution $( syntax
                 if self.peek_char() == '(' {
@@ -213,7 +213,7 @@ impl Lexer {
                         position: current_position,
                     }
                 }
-            },
+            }
             '"' => Token {
                 kind: TokenKind::Quote,
                 value: "\"".to_string(),
@@ -352,6 +352,26 @@ impl Lexer {
     fn skip_whitespace(&mut self) {
         while self.ch.is_whitespace() && self.ch != '\n' {
             self.read_char();
+        }
+    }
+}
+
+#[cfg(test)]
+mod lexer_tests {
+    use crate::lexer::Lexer;
+    use crate::lexer::TokenKind;
+
+    #[test]
+    fn debug_lexer_output() {
+        let input = r#"LOG_DIR="/var/log""#;
+        let mut lexer = Lexer::new(input);
+
+        println!("Tokens for 'LOG_DIR=\"/var/log\"':");
+
+        let mut token = lexer.next_token();
+        while token.kind != TokenKind::EOF {
+            println!("Token: {:?}", token);
+            token = lexer.next_token();
         }
     }
 }
