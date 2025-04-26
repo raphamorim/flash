@@ -5,6 +5,14 @@ edition = "2024"
 description = "Mystical shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"
 
+[lib]
+name = "mystsh"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myst"
+path = "src/bin.rs"
+
 [features]
 default = ["formatter", "interpreter"]
 formatter = []
