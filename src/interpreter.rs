@@ -452,37 +452,38 @@ impl Interpreter {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_variable_expansion() {
-//         let mut interpreter = Interpreter::new();
-//         interpreter
-//             .variables
-//             .insert("NAME".to_string(), "world".to_string());
+    #[test]
+    fn test_variable_expansion() {
+        let mut interpreter = Interpreter::new();
+        interpreter
+            .variables
+            .insert("NAME".to_string(), "world".to_string());
 
-//         let expanded = interpreter.expand_variables("Hello $NAME!");
-//         assert_eq!(expanded, "Hello world!");
+        let expanded = interpreter.expand_variables("Hello $NAME!");
+        assert_eq!(expanded, "Hello world!");
 
-//         let expanded = interpreter.expand_variables("Hello ${NAME}!");
-//         assert_eq!(expanded, "Hello world!");
-//     }
+        let expanded = interpreter.expand_variables("Hello ${NAME}!");
+        assert_eq!(expanded, "Hello world!");
+    }
 
-//     #[test]
-//     fn test_command_execution() {
-//         let mut interpreter = Interpreter::new();
+    #[test]
+    fn test_command_execution() {
+        let mut interpreter = Interpreter::new();
 
-//         // Test a basic command
-//         let result = interpreter.execute("echo test").unwrap();
-//         assert_eq!(result, 0);
+        // Test a basic command
+        let result = interpreter.execute("echo test").unwrap();
+        assert_eq!(result, 0);
 
-//         // Test assignment
-//         let result = interpreter.execute("X=test").unwrap();
-//         assert_eq!(result, 0);
-//         assert_eq!(interpreter.variables.get("X"), Some(&"test".to_string()));
-//     }
+        // Test assignment
+        let result = interpreter.execute("X=test").unwrap();
+        assert_eq!(result, 0);
+        assert_eq!(interpreter.variables.get("X"), Some(&"test".to_string()));
+    }
+}
 
 //     // #[test]
 //     // fn test_pipeline() {

@@ -489,6 +489,10 @@ impl Parser {
                         operators.push("&&".to_string());
                         self.next_token();
                     }
+                    TokenKind::Background => {
+                        operators.push("&".to_string());
+                        self.next_token();
+                    }
                     TokenKind::Or => {
                         operators.push("||".to_string());
                         self.next_token();
@@ -564,6 +568,10 @@ impl Parser {
                     }
                     TokenKind::And => {
                         operators.push("&&".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Background => {
+                        operators.push("&".to_string());
                         self.next_token();
                     }
                     TokenKind::Or => {

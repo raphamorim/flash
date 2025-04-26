@@ -7,6 +7,7 @@ pub enum TokenKind {
     Semicolon,     // ;
     Newline,       // \n
     And,           // &&
+    Background,    // & (add this new token)
     Or,            // ||
     LParen,        // (
     RParen,        // )
@@ -130,15 +131,6 @@ impl Lexer {
                 value: ";".to_string(),
                 position: current_position,
             },
-            '\n' => {
-                self.line += 1;
-                self.column = 0;
-                Token {
-                    kind: TokenKind::Newline,
-                    value: "\n".to_string(),
-                    position: current_position,
-                }
-            }
             '&' => {
                 if self.peek_char() == '&' {
                     self.read_char();
@@ -148,9 +140,22 @@ impl Lexer {
                         position: current_position,
                     }
                 } else {
-                    self.read_word()
+                    Token {
+                        kind: TokenKind::Background,
+                        value: "&".to_string(),
+                        position: current_position,
+                    }
                 }
-            }
+            },
+            '\n' => {
+                self.line += 1;
+                self.column = 0;
+                Token {
+                    kind: TokenKind::Newline,
+                    value: "\n".to_string(),
+                    position: current_position,
+                }
+            },
             '(' => Token {
                 kind: TokenKind::LParen,
                 value: "(".to_string(),
@@ -191,7 +196,7 @@ impl Lexer {
                         position: current_position,
                     }
                 }
-            }
+            },
             '$' => {
                 // Check for command substitution $( syntax
                 if self.peek_char() == '(' {
@@ -208,7 +213,7 @@ impl Lexer {
                         position: current_position,
                     }
                 }
-            }
+            },
             '"' => Token {
                 kind: TokenKind::Quote,
                 value: "\"".to_string(),
