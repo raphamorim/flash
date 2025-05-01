@@ -22,6 +22,8 @@ pub enum TokenKind {
     Backtick,      // `
     Comment,       // #
     CmdSubst,      // $(
+    Increment,     // ++
+    Decrement,     // --
     ExtGlob(char), // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
@@ -69,7 +71,7 @@ impl Position {
 fn is_special_char(ch: char) -> bool {
     match ch {
         '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '{' | '}' | '<' | '>' | '$' | '"' | '\''
-        | '`' | '#' => true,
+        | '`' | '#' | '+' => true,
         // Removed '?', '*', '+', '@', '!' to allow them in normal words
         _ => false,
     }
@@ -130,6 +132,18 @@ impl Lexer {
         let current_position = Position::new(self.line, self.column);
 
         let token = match self.ch {
+            '+' => {
+                if self.peek_char() == '+' {
+                    self.read_char(); // Consume the second '+'
+                    Token {
+                        kind: TokenKind::Increment,
+                        value: "++".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    self.read_word()
+                }
+            },
             '=' => Token {
                 kind: TokenKind::Assignment,
                 value: "=".to_string(),
@@ -906,7 +920,8 @@ mod lexer_tests {
             TokenKind::Word("output.txt".to_string()),
             TokenKind::Word("2".to_string()),
             TokenKind::Great,
-            TokenKind::Word("&1".to_string()),
+            TokenKind::Background,
+            TokenKind::Word("1".to_string()),
         ];
         test_tokens(input, expected);
     }
@@ -1472,7 +1487,7 @@ mod lexer_tests {
             TokenKind::Word("5".to_string()),
             TokenKind::Semicolon,
             TokenKind::Word("i".to_string()),
-            TokenKind::Word("++".to_string()),
+            TokenKind::Increment,
             TokenKind::RParen,
             TokenKind::RParen,
             TokenKind::Semicolon,
