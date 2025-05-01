@@ -4,7 +4,7 @@ use crate::lexer::Token;
 use crate::lexer::TokenKind;
 
 /// AST node types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Command {
         name: String,
@@ -42,13 +42,13 @@ pub enum Node {
 }
 
 /// Redirection types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Redirect {
     pub kind: RedirectKind,
     pub file: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RedirectKind {
     Input,  // <
     Output, // >
@@ -915,6 +915,10 @@ fi
         // This test just checks that parsing doesn't panic
         let result = parse_test(input);
 
+        assert_eq!(result, Node::List {
+            statements: vec![],
+            operators: vec!["\n".to_string(), "\n".to_string(), "".to_string()],
+        });
         assert_eq!(format!("{:?}", result), "a");
         // Verify we got a List node at the top level
         match result {
