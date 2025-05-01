@@ -1,10 +1,10 @@
 # myst
 
-Mystical shell parser, formatter, and interpreter with Bash support.
+*A mystical shell parser, formatter, and interpreter written in Rust.*
 
-This library provides a fast and extensible **parser**, **formatter**, and **interpreter** for POSIX-style shell scripts, written entirely in **Rust**. Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but built from the ground up for performance, correctness, and hackability.
+Myst is a fast, extensible, and hackable toolkit for working with POSIX-style shell scripts. It includes a parser, formatter, and interpreter built from scratch in Rust. Myst understands real-world shell syntax and provides structured AST access for static analysis, tooling, and transformation.
 
-It understands real-world shell code, handles edge cases, and offers structured access to ASTs for tooling, analysis, or code transformation.
+> Inspired by mvdan/sh, but engineered from the ground up with performance and extensibility in mind.
 
 ## Motivation
 
@@ -12,7 +12,7 @@ Myst was created to serve two main purposes: as a learning project to better und
 
 ## Install as your shell
 
-Please remember that myst is still under development.
+> ⚠️ Myst is still under development. Use it with caution in production environments.
 
 ```bash
 git clone https://github.com/raphamorim/myst.git
@@ -24,7 +24,9 @@ sudo cp target/release/myst /bin/
 myst
 ```
 
-## Usage as interop
+## 🔌 Embed in Your Rust Project
+
+#### As an Interpreter
 
 ```rust
 use mystsh::interpreter::Interpreter;
@@ -37,7 +39,7 @@ fn main() -> io::Result<()> {
 }
 ```
 
-## Usage as parser
+#### As a Parser
 
 ```rust
 use mystsh::lexer::Lexer;
@@ -124,3 +126,13 @@ This table outlines the supported features of POSIX Shell and Bash. Use it to tr
 |                       | Extended globbing (`extglob`)                   | ❌          | ✅   | [ ]  | Requires `shopt` |
 |                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | [ ]  | |
 |                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | [ ]  | `source` is Bash synonym |
+
+
+## 📦 Crate Info
+
+Add Myst to your Cargo.toml once it's published:
+
+```toml
+mystsh = "0.x"
+```
+Until then, use a local path or Git dependency.
