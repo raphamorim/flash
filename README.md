@@ -28,10 +28,10 @@ This table outlines the supported features of POSIX Shell and Bash. Use it to tr
 
 | Category              | Functionality / Feature                         | POSIX Shell | Bash | Myst | Notes |
 |-----------------------|--------------------------------------------------|-------------|------|------|-------|
-| **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | [ ]  | `VAR=value` |
+| **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
 |                       | Command substitution                            | ✅          | ✅   | [ ]  | `$(cmd)` and `` `cmd` `` |
 |                       | Arithmetic substitution                         | ❌          | ✅   | [ ]  | `$((expr))` |
-|                       | Comments (`#`)                                  | ✅          | ✅   | [ ]  | |
+|                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
 |                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | [ ]  | |
 |                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | [ ]  | |
 | **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | [ ]  | |
