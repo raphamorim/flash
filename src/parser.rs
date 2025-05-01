@@ -915,10 +915,13 @@ fi
         // This test just checks that parsing doesn't panic
         let result = parse_test(input);
 
-        assert_eq!(result, Node::List {
-            statements: vec![],
-            operators: vec!["\n".to_string(), "\n".to_string(), "".to_string()],
-        });
+        assert_eq!(
+            result,
+            Node::List {
+                statements: vec![],
+                operators: vec!["\n".to_string(), "\n".to_string(), "".to_string()],
+            }
+        );
         assert_eq!(format!("{:?}", result), "a");
         // Verify we got a List node at the top level
         match result {

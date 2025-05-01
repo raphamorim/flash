@@ -16,11 +16,18 @@ path = "src/bin.rs"
 [features]
 default = ["formatter", "interpreter"]
 formatter = []
-interpreter = ["os_pipe", "libc"]
+interpreter = ["os_pipe", "libc", "glob", "regex", "termios", "scopeguard"]
 
 [dependencies]
+scopeguard = { version = "1.2.0", optional = true }
+termios = { version = "0.3.3", optional = true }
 os_pipe = { version = "1.2.1", optional = true }
 libc = { version = "0.2.172", optional = true }
+glob = { version = "0.3.2", optional = true }
+regex = { version = "1.11.1", optional = true }
+
+[dev-dependencies]
+tempfile = "3.19.1"
 
 [profile.release]
 opt-level = "s"

@@ -2,17 +2,24 @@ use crate::lexer::Lexer;
 use crate::parser::Node;
 use crate::parser::Parser;
 use crate::parser::RedirectKind;
+use libc;
+use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use termios::{ECHO, ICANON, TCSANOW, Termios, VMIN, VTIME, tcsetattr};
 
 /// Shell interpreter
 pub struct Interpreter {
     variables: HashMap<String, String>,
     last_exit_code: i32,
+    history: Vec<String>,
+    history_file: Option<String>,
 }
 
 impl Interpreter {
@@ -28,29 +35,262 @@ impl Interpreter {
         variables.insert("?".to_string(), "0".to_string());
         variables.insert("SHELL".to_string(), "bash".to_string());
 
+        let history_file = env::var("HOME")
+            .map(|home| format!("{}/.shell_history", home))
+            .ok();
+
+        // Load history from file if it exists
+        let mut history = Vec::new();
+        if let Some(ref file_path) = history_file {
+            if let Ok(file) = fs::File::open(file_path) {
+                let reader = io::BufReader::new(file);
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        history.push(line);
+                    }
+                }
+            }
+        }
+
         Self {
             variables,
             last_exit_code: 0,
+            history,
+            history_file,
         }
     }
 
+    fn save_history(&self) -> io::Result<()> {
+        if let Some(ref file_path) = self.history_file {
+            let mut file = fs::File::create(file_path)?;
+            for line in &self.history {
+                writeln!(file, "{}", line)?;
+            }
+        }
+        Ok(())
+    }
+
+    // Generate completion candidates for the current input
+    fn generate_completions(&self, input: &str, cursor_pos: usize) -> Vec<String> {
+        let input_up_to_cursor = &input[..cursor_pos];
+        let words: Vec<&str> = input_up_to_cursor.split_whitespace().collect();
+
+        // If we're at the beginning of the line or just completed a word
+        if words.is_empty() || input_up_to_cursor.ends_with(' ') {
+            // Return list of available commands
+            return self.get_commands("");
+        }
+
+        // If we're completing the first word (command)
+        if words.len() == 1 && !input_up_to_cursor.ends_with(' ') {
+            let prefix = words[0];
+            return self.get_commands(prefix);
+        }
+
+        // Check if we're completing a variable
+        if input_up_to_cursor.ends_with('$') {
+            // Complete variable names
+            return self.variables.keys().map(|k| format!("${}", k)).collect();
+        }
+
+        if let Some(var_start) = input_up_to_cursor.rfind('$') {
+            if var_start < cursor_pos {
+                let var_prefix = &input_up_to_cursor[var_start + 1..cursor_pos];
+                return self
+                    .variables
+                    .keys()
+                    .filter(|k| k.starts_with(var_prefix))
+                    .map(|k| k[var_prefix.len()..].to_string())
+                    .collect();
+            }
+        }
+
+        // Otherwise, assume we're completing a filename
+        let last_word = if input_up_to_cursor.ends_with(' ') {
+            ""
+        } else {
+            words.last().unwrap_or(&"")
+        };
+
+        self.get_path_completions(last_word)
+    }
+
+    // Get list of commands that match the given prefix
+    fn get_commands(&self, prefix: &str) -> Vec<String> {
+        let mut commands = Vec::new();
+
+        // Add built-ins
+        for cmd in &["cd", "echo", "export", "source", ".", "exit"] {
+            if cmd.starts_with(prefix) {
+                commands.push(cmd.to_string());
+            }
+        }
+
+        // Add commands from PATH
+        if let Ok(path) = env::var("PATH") {
+            for path_entry in path.split(':') {
+                if let Ok(entries) = fs::read_dir(path_entry) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            if let Some(name) = entry.file_name().to_str() {
+                                if name.starts_with(prefix) {
+                                    if let Ok(metadata) = entry.path().metadata() {
+                                        if metadata.is_file()
+                                            && metadata.permissions().mode() & 0o111 != 0
+                                        {
+                                            commands.push(name.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        commands.sort();
+        commands.dedup();
+        commands
+    }
+
+    // Get file/directory completions for the given path prefix
+    fn get_path_completions(&self, prefix: &str) -> Vec<String> {
+        let mut completions = Vec::new();
+
+        // Determine the directory to search and the filename prefix
+        let (dir_path, file_prefix) = if prefix.contains('/') {
+            let path = Path::new(prefix);
+            let parent = path.parent().unwrap_or(Path::new(""));
+            let file_name = path.file_name().map_or("", |f| f.to_str().unwrap_or(""));
+            (parent.to_path_buf(), file_name.to_string())
+        } else {
+            (PathBuf::from("."), prefix.to_string())
+        };
+
+        // Read the directory entries
+        if let Ok(entries) = fs::read_dir(dir_path) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if name.starts_with(&file_prefix) {
+                            let mut completion = name[file_prefix.len()..].to_string();
+
+                            // Add a trailing slash for directories
+                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                                completion.push('/');
+                            }
+
+                            completions.push(completion);
+                        }
+                    }
+                }
+            }
+        }
+
+        completions.sort();
+        completions
+    }
+
+    // Display a list of completions
+    fn display_completions(&self, completions: &[String]) -> io::Result<()> {
+        if completions.is_empty() {
+            return Ok(());
+        }
+
+        println!(); // Move to a new line
+
+        // Calculate the maximum width of completions
+        let max_width = completions.iter().map(|s| s.len()).max().unwrap_or(0) + 2;
+        let term_width = self.get_terminal_width();
+        let columns = std::cmp::max(1, term_width / max_width);
+
+        // Display completions in columns
+        for (i, completion) in completions.iter().enumerate() {
+            print!("{:<width$}", completion, width = max_width);
+            if (i + 1) % columns == 0 {
+                println!();
+            }
+        }
+
+        // Ensure we end with a newline
+        if completions.len() % columns != 0 {
+            println!();
+        }
+
+        Ok(())
+    }
+
+    // Get the terminal width
+    fn get_terminal_width(&self) -> usize {
+        let mut winsize = libc::winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+
+        unsafe {
+            if libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut winsize) == 0 {
+                return winsize.ws_col as usize;
+            }
+        }
+
+        // Default if we can't get the terminal width
+        80
+    }
+
     pub fn run_interactive(&mut self) -> io::Result<()> {
-        let mut buffer = String::new();
         let stdin = io::stdin();
         let mut stdout = io::stdout();
+        let fd = stdin.as_raw_fd();
+
+        // Get the current terminal attributes
+        let original_termios = Termios::from_fd(fd)?;
+        let mut raw_termios = original_termios.clone();
+
+        // Restore terminal on exit
+        let _guard = scopeguard::guard((), |_| {
+            let _ = tcsetattr(fd, TCSANOW, &original_termios);
+        });
+
+        // History navigation variables
+        let mut history_index = self.history.len();
 
         loop {
-            stdout.write_all(b"$ ")?;
+            // Display prompt
+            write!(stdout, "$ ")?;
             stdout.flush()?;
 
-            buffer.clear();
-            stdin.read_line(&mut buffer)?;
+            // Read and process input with tab completion
+            let input = self.read_line_with_completion(
+                &original_termios,
+                &mut raw_termios,
+                &mut history_index,
+            )?;
 
-            if buffer.trim() == "exit" {
+            if input.trim().is_empty() {
+                continue;
+            }
+
+            // Handle exit command
+            if input.trim() == "exit" {
                 break;
             }
 
-            let result = self.execute(&buffer);
+            // Add to history if not empty and different from last command
+            if !input.trim().is_empty()
+                && (self.history.is_empty()
+                    || self.history.last().map_or(true, |last| last != &input))
+            {
+                self.history.push(input.clone());
+                history_index = self.history.len();
+                // Save history after each command
+                let _ = self.save_history();
+            }
+
+            // Execute the command
+            let result = self.execute(&input);
 
             match result {
                 Ok(code) => {
@@ -65,7 +305,228 @@ impl Interpreter {
             }
         }
 
+        // Save history before exit
+        self.save_history()?;
+
         Ok(())
+    }
+
+    fn read_line_with_completion(
+        &self,
+        original_termios: &Termios,
+        raw_termios: &mut Termios,
+        history_index: &mut usize,
+    ) -> io::Result<String> {
+        let mut stdin = io::stdin();
+        let mut stdout = io::stdout();
+        let fd = stdin.as_raw_fd();
+
+        let mut buffer = String::new();
+        let mut cursor_pos = 0;
+
+        loop {
+            // Switch to raw mode to read individual characters
+            raw_termios.c_lflag &= !(ICANON | ECHO);
+            raw_termios.c_cc[VMIN] = 1;
+            raw_termios.c_cc[VTIME] = 0;
+            tcsetattr(fd, TCSANOW, &raw_termios)?;
+
+            // Read a single byte
+            let mut input_byte = [0u8; 1];
+            stdin.read_exact(&mut input_byte)?;
+
+            // Switch back to canonical mode for printing
+            tcsetattr(fd, TCSANOW, &original_termios)?;
+
+            match input_byte[0] {
+                // Enter
+                b'\n' | b'\r' => {
+                    println!();
+                    break;
+                }
+
+                // Tab for completion
+                b'\t' => {
+                    let completions = self.generate_completions(&buffer, cursor_pos);
+
+                    if completions.len() == 1 {
+                        // If there's only one completion, use it
+                        let completion = &completions[0];
+                        buffer.insert_str(cursor_pos, completion);
+                        cursor_pos += completion.len();
+
+                        // Redraw the line with the completion
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    } else if completions.len() > 1 {
+                        // Show multiple completions
+                        self.display_completions(&completions)?;
+
+                        // Find the common prefix among completions
+                        if let Some(common_prefix) = self.find_common_prefix(&completions) {
+                            if !common_prefix.is_empty() {
+                                buffer.insert_str(cursor_pos, &common_prefix);
+                                cursor_pos += common_prefix.len();
+                            }
+                        }
+
+                        // Redraw the prompt and line
+                        write!(stdout, "$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Backspace
+                8 | 127 => {
+                    if cursor_pos > 0 {
+                        buffer.remove(cursor_pos - 1);
+                        cursor_pos -= 1;
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, " ")?; // Clear deleted character
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Escape sequence (arrow keys, etc.)
+                27 => {
+                    // Read the next two bytes
+                    let mut escape_seq = [0u8; 2];
+                    stdin.read_exact(&mut escape_seq)?;
+
+                    if escape_seq[0] == b'[' {
+                        match escape_seq[1] {
+                            // Up arrow - history navigation
+                            b'A' => {
+                                if *history_index > 0 {
+                                    *history_index -= 1;
+                                    buffer = self.history[*history_index].clone();
+                                    cursor_pos = buffer.len();
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            // Down arrow - history navigation
+                            b'B' => {
+                                if *history_index < self.history.len() {
+                                    *history_index += 1;
+                                    if *history_index == self.history.len() {
+                                        buffer.clear();
+                                        cursor_pos = 0;
+                                    } else {
+                                        buffer = self.history[*history_index].clone();
+                                        cursor_pos = buffer.len();
+                                    }
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "                    ")?; // Clear any leftovers
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            // Left arrow
+                            b'D' => {
+                                if cursor_pos > 0 {
+                                    cursor_pos -= 1;
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    // Move cursor back to the right position
+                                    for _ in 0..(buffer.len() - cursor_pos) {
+                                        write!(stdout, "\x1B[D")?;
+                                    }
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            // Right arrow
+                            b'C' => {
+                                if cursor_pos < buffer.len() {
+                                    cursor_pos += 1;
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    // Move cursor back to the right position
+                                    for _ in 0..(buffer.len() - cursor_pos) {
+                                        write!(stdout, "\x1B[D")?;
+                                    }
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Ctrl-C
+                3 => {
+                    println!("^C");
+                    return Ok(String::new());
+                }
+
+                // Ctrl-D on empty line
+                4 => {
+                    if buffer.is_empty() {
+                        println!("exit");
+                        return Ok("exit".to_string());
+                    }
+                }
+
+                // Regular character
+                _ => {
+                    let ch = input_byte[0] as char;
+                    if ch.is_ascii() && !ch.is_control() {
+                        buffer.insert(cursor_pos, ch);
+                        cursor_pos += 1;
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+            }
+        }
+
+        Ok(buffer)
+    }
+
+    // Find the longest common prefix among completion candidates
+    fn find_common_prefix(&self, completions: &[String]) -> Option<String> {
+        if completions.is_empty() {
+            return None;
+        }
+
+        if completions.len() == 1 {
+            return Some(completions[0].clone());
+        }
+
+        let first = &completions[0];
+        let mut common_len = first.len();
+
+        for completion in &completions[1..] {
+            let mut i = 0;
+            let mut matched = true;
+
+            for (c1, c2) in first.chars().zip(completion.chars()) {
+                if c1 != c2 {
+                    matched = false;
+                    break;
+                }
+                i += 1;
+            }
+
+            if !matched {
+                common_len = common_len.min(i);
+            } else {
+                common_len = common_len.min(completion.len());
+            }
+        }
+
+        if common_len == 0 {
+            return None;
+        }
+
+        Some(first[..common_len].to_string())
     }
 
     fn execute(&mut self, input: &str) -> Result<i32, io::Error> {
@@ -183,7 +644,7 @@ impl Interpreter {
 
                         match command.status() {
                             Ok(status) => Ok(status.code().unwrap_or(0)),
-                            Err(e) => {
+                            Err(_) => {
                                 eprintln!("{}: command not found", name);
                                 Ok(127) // Command not found
                             }
@@ -191,6 +652,7 @@ impl Interpreter {
                     }
                 }
             }
+            // The rest of the evaluate method remains the same...
             Node::Pipeline { commands } => {
                 // Handle pipeline with proper piping
                 if commands.is_empty() {
@@ -354,8 +816,167 @@ impl Interpreter {
                 self.evaluate(list)
             }
             Node::Comment(_) => Ok(0),
-            Node::VariableAssignmentCommand { .. } => todo!(),
-            Node::ExtGlobPattern { .. } => todo!(),
+            Node::VariableAssignmentCommand {
+                assignments,
+                command,
+            } => {
+                // Save original variable values to restore later
+                let mut original_values = HashMap::new();
+
+                // Apply all variable assignments temporarily
+                for assignment in assignments {
+                    if let Node::Assignment { name, value } = assignment {
+                        // Store the original value if it exists
+                        if let Some(orig_value) = self.variables.get(name) {
+                            original_values.insert(name.clone(), orig_value.clone());
+                        } else {
+                            // Mark that the variable didn't exist before
+                            original_values.insert(name.clone(), String::new());
+                        }
+
+                        // Apply the assignment
+                        match &**value {
+                            Node::StringLiteral(string_value) => {
+                                let expanded_value = self.expand_variables(string_value);
+                                self.variables.insert(name.clone(), expanded_value);
+                            }
+                            Node::CommandSubstitution { command: cmd } => {
+                                let output = self.capture_command_output(cmd)?;
+                                self.variables.insert(name.clone(), output);
+                            }
+                            _ => {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Other,
+                                    "Unsupported value type for assignment",
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "Expected Assignment node in VariableAssignmentCommand",
+                        ));
+                    }
+                }
+
+                // Execute the command with the temporary variable assignments
+                let result = self.evaluate(command);
+
+                // Restore original variable values
+                for (name, value) in original_values {
+                    if value.is_empty() && !self.variables.contains_key(&name) {
+                        // The variable didn't exist before, remove it
+                        self.variables.remove(&name);
+                    } else {
+                        // Restore the original value
+                        self.variables.insert(name, value);
+                    }
+                }
+
+                result
+            }
+            Node::ExtGlobPattern {
+                operator,
+                patterns,
+                suffix,
+            } => {
+                // Handle extended glob pattern
+                // This is a complex feature, and we'll implement a simplified version
+
+                // First, get all files in the current directory
+                let entries = match fs::read_dir(".") {
+                    Ok(entries) => entries,
+                    Err(e) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Failed to read directory: {}", e),
+                        ));
+                    }
+                };
+
+                // Convert patterns to regex for matching
+                let mut matches = Vec::new();
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let file_name = entry.file_name().to_string_lossy().to_string();
+
+                        // Check if the file matches our extended glob pattern
+                        if self.matches_ext_glob(&file_name, *operator, patterns, suffix) {
+                            matches.push(file_name);
+                        }
+                    }
+                }
+
+                // Just print the matches (in a real shell, this would be used as command args)
+                for m in matches {
+                    println!("{}", m);
+                }
+
+                Ok(0)
+            }
+        }
+    }
+
+    // Helper method for matching extended glob patterns
+    fn matches_ext_glob(
+        &self,
+        filename: &str,
+        operator: char,
+        patterns: &[String],
+        suffix: &str,
+    ) -> bool {
+        // Check if the filename has the required suffix
+        if !filename.ends_with(suffix) {
+            return false;
+        }
+
+        // Remove the suffix for pattern matching
+        let without_suffix = if suffix.is_empty() {
+            filename.to_string()
+        } else {
+            filename[..filename.len() - suffix.len()].to_string()
+        };
+
+        // Convert patterns to regex patterns
+        let regex_patterns: Vec<Regex> = patterns
+            .iter()
+            .map(|p| {
+                // Convert glob pattern to regex
+                // This is simplified and doesn't handle all glob features
+                let escaped = regex::escape(p);
+                let regex_str = escaped.replace("\\*", ".*").replace("\\?", ".");
+                Regex::new(&format!("^{}$", regex_str))
+                    .unwrap_or_else(|_| Regex::new("^$").unwrap())
+            })
+            .collect();
+
+        // Apply the operator logic
+        match operator {
+            '?' => {
+                // Match any of the patterns exactly once
+                regex_patterns.iter().any(|re| re.is_match(&without_suffix))
+            }
+            '*' => {
+                // Match zero or more occurrences of any of the patterns
+                true // Simplified - should check for zero or more matches
+            }
+            '+' => {
+                // Match one or more occurrences of any of the patterns
+                regex_patterns.iter().any(|re| re.is_match(&without_suffix))
+            }
+            '@' => {
+                // Match exactly one of the patterns
+                let match_count = regex_patterns
+                    .iter()
+                    .filter(|re| re.is_match(&without_suffix))
+                    .count();
+                match_count == 1
+            }
+            '!' => {
+                // Match anything except one of the patterns
+                !regex_patterns.iter().any(|re| re.is_match(&without_suffix))
+            }
+            _ => false,
         }
     }
 
@@ -455,6 +1076,7 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::Node;
 
     #[test]
     fn test_variable_expansion() {
@@ -483,160 +1105,77 @@ mod tests {
         assert_eq!(result, 0);
         assert_eq!(interpreter.variables.get("X"), Some(&"test".to_string()));
     }
+
+    #[test]
+    fn test_variable_assignment_command() {
+        // Create an interpreter
+        let mut interpreter = Interpreter::new();
+
+        // Set up a test variable
+        interpreter
+            .variables
+            .insert("TESTVAR".to_string(), "original".to_string());
+
+        // Create a temporary variable assignment with command
+        let name_node = Box::new(Node::StringLiteral("temporary".to_string()));
+        let assignment = Node::Assignment {
+            name: "TESTVAR".to_string(),
+            value: name_node,
+        };
+
+        let echo_command = Box::new(Node::Command {
+            name: "echo".to_string(),
+            args: vec!["$TESTVAR".to_string()],
+            redirects: vec![],
+        });
+
+        let var_cmd = Node::VariableAssignmentCommand {
+            assignments: vec![assignment],
+            command: echo_command,
+        };
+
+        // Execute the command which should print "temporary"
+        let exit_code = interpreter.evaluate(&var_cmd).unwrap();
+        assert_eq!(exit_code, 0);
+
+        // Verify the original value is restored
+        assert_eq!(
+            interpreter.variables.get("TESTVAR"),
+            Some(&"original".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ext_glob_pattern() {
+        // Create a temporary directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create some test files
+        fs::write(temp_path.join("test1.txt"), "test content").unwrap();
+        fs::write(temp_path.join("test2.txt"), "test content").unwrap();
+        fs::write(temp_path.join("other.txt"), "other content").unwrap();
+        fs::write(temp_path.join("another.log"), "log content").unwrap();
+
+        // Change to the temporary directory
+        let original_dir = env::current_dir().unwrap();
+        env::set_current_dir(temp_path).unwrap();
+
+        // Create an interpreter
+        let mut interpreter = Interpreter::new();
+
+        // Create an ExtGlobPattern node to match files ending with .txt
+        let ext_glob = Node::ExtGlobPattern {
+            operator: '@',
+            patterns: vec!["test*".to_string(), "other*".to_string()],
+            suffix: ".txt".to_string(),
+        };
+
+        // Execute and check the pattern matching
+        let exit_code = interpreter.evaluate(&ext_glob).unwrap();
+        assert_eq!(exit_code, 0);
+
+        // Go back to the original directory
+        env::set_current_dir(original_dir).unwrap();
+    }
 }
-
-//     // #[test]
-//     // fn test_pipeline() {
-//     //     let input = "echo hello | grep e";
-//     //     let lexer = Lexer::new(input);
-//     //     let mut parser = Parser::new(lexer);
-
-//     //     if let Node::Pipeline { commands } = parser.parse_command() {
-//     //         assert_eq!(commands.len(), 2);
-
-//     //         if let Node::Command { name, args, .. } = &commands[0] {
-//     //             assert_eq!(name, "echo");
-//     //             assert_eq!(args, &["hello"]);
-//     //         } else {
-//     //             panic!("Expected Command node");
-//     //         }
-
-//     //         if let Node::Command { name, args, .. } = &commands[1] {
-//     //             assert_eq!(name, "grep");
-//     //             assert_eq!(args, &["e"]);
-//     //         } else {
-//     //             panic!("Expected Command node");
-//     //         }
-//     //     } else {
-//     //         panic!("Expected Pipeline node");
-//     //     }
-//     // }
-
-//     #[test]
-//     fn test_complex_pipeline() {
-//         let input = "cat file.txt | grep pattern | sort | uniq -c | sort -nr";
-//         let lexer = Lexer::new(input);
-//         let mut parser = Parser::new(lexer);
-
-//         if let Node::Pipeline { commands } = parser.parse_command() {
-//             assert_eq!(commands.len(), 5);
-
-//             if let Node::Command { name, .. } = &commands[0] {
-//                 assert_eq!(name, "cat");
-//             }
-
-//             if let Node::Command { name, .. } = &commands[4] {
-//                 assert_eq!(name, "sort");
-//             }
-//         } else {
-//             panic!("Expected Pipeline node");
-//         }
-//     }
-
-//     #[test]
-//     fn test_subshell() {
-//         let input = "(cd /tmp && ls)";
-//         let lexer = Lexer::new(input);
-//         let mut parser = Parser::new(lexer);
-
-//         if let Node::Subshell { list } = parser.parse_statement().unwrap() {
-//             if let Node::List {
-//                 statements,
-//                 operators,
-//             } = list.as_ref()
-//             {
-//                 assert_eq!(statements.len(), 2);
-//                 assert_eq!(operators, &["&&".to_string()]);
-//             } else {
-//                 panic!("Expected List node");
-//             }
-//         } else {
-//             panic!("Expected Subshell node");
-//         }
-//     }
-
-//     #[test]
-//     fn test_logical_operators() {
-//         let input = "true && echo success || echo failure";
-//         let lexer = Lexer::new(input);
-//         let mut parser = Parser::new(lexer);
-//         let node = parser.parse_script();
-
-//         if let Node::List {
-//             statements,
-//             operators,
-//         } = node
-//         {
-//             assert_eq!(statements.len(), 3);
-//             assert_eq!(operators, &["&&".to_string(), "||".to_string()]);
-//         } else {
-//             panic!("Expected List node");
-//         }
-//     }
-
-//     #[test]
-//     fn test_comments() {
-//         let input = "echo hello # this is a comment\necho world";
-//         let lexer = Lexer::new(input);
-//         let mut parser = Parser::new(lexer);
-//         let node = parser.parse_script();
-
-//         if let Node::List { statements, .. } = node {
-//             assert_eq!(statements.len(), 3); // echo hello, comment, echo world
-
-//             match &statements[1] {
-//                 Node::Comment(text) => {
-//                     assert!(text.starts_with("# this is a comment"));
-//                 }
-//                 _ => panic!("Expected Comment node"),
-//             }
-//         } else {
-//             panic!("Expected List node");
-//         }
-//     }
-
-// //     #[test]
-// //     fn integration_test_basic_script_with_variable_and_if_and_else() {
-// //         let script = r#"
-// //     #!/bin/bash
-// //     # This is a test script
-// //     echo "Starting test"
-// //     RESULT=$(echo "test" | grep "t")
-// //     echo "Result: $RESULT"
-// //     if [ -f "/tmp/test" ]; then
-// //         echo "File exists"
-// //     else
-// //         echo "File doesn't exist"
-// //     fi
-// //     "#;
-
-// //         let mut interpreter = Interpreter::new();
-// //         let result = interpreter.execute(script).unwrap();
-
-// //         // Just make sure it runs without errors
-// //         assert_eq!(result, 0);
-// //     }
-
-// //     #[test]
-// //     fn integration_test_basic_script() {
-// //         let script = r#"
-// // # Simple test script with basic commands only
-// // echo "Starting test"
-// // MESSAGE="Hello world"
-// // echo "Message: $MESSAGE"
-// // cd /tmp
-// // echo "Current directory: $(pwd)"
-// // "#;
-
-// //         let mut interpreter = Interpreter::new();
-// //         let result = interpreter.execute(script).unwrap();
-
-// //         // Just make sure it runs without errors
-// //         assert_eq!(result, 0);
-// //     }
-
-// /// Execute a shell script and return the exit code
-// fn execute_script(script: &str) -> Result<i32, io::Error> {
-//     let mut interpreter = Interpreter::new();
-//     interpreter.execute(script)
-// }
