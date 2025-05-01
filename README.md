@@ -82,6 +82,12 @@ fn test_simple_command() {
 
 This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
 
+Legends:
+
+- ✅ fully supported.
+- ⚠️ only supported in parser and formatter.
+- ❌ not supported.
+
 | Category              | Functionality / Feature                         | POSIX Shell | Bash | Myst | Notes |
 |-----------------------|--------------------------------------------------|-------------|------|------|-------|
 | **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
