@@ -39,6 +39,48 @@ fn main() -> io::Result<()> {
 }
 ```
 
+#### As a Lexer/Tokenizer
+
+```rust
+fn test_tokens(input: &str, expected_tokens: Vec<TokenKind>) {
+    let mut lexer = Lexer::new(input);
+    for expected in expected_tokens {
+        let token = lexer.next_token();
+        assert_eq!(
+            token.kind, expected,
+            "Expected {:?} but got {:?} for input: {}",
+            expected, token.kind, input
+        );
+    }
+
+    // Ensure we've consumed all tokens
+    let final_token = lexer.next_token();
+    assert_eq!(
+        final_token.kind,
+        TokenKind::EOF,
+        "Expected EOF but got {:?}",
+        final_token.kind
+    );
+}
+
+#[test]
+fn test_function_declaration() {
+    let input = "function greet() { echo hello; }";
+    let expected = vec![
+        TokenKind::Function,
+        TokenKind::Word("greet".to_string()),
+        TokenKind::LParen,
+        TokenKind::RParen,
+        TokenKind::LBrace,
+        TokenKind::Word("echo".to_string()),
+        TokenKind::Word("hello".to_string()),
+        TokenKind::Semicolon,
+        TokenKind::RBrace,
+    ];
+    test_tokens(input, expected);
+}
+```
+
 #### As a Parser
 
 ```rust
