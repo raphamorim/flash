@@ -22,7 +22,59 @@ sudo cp target/release/myst /bin/
 myst
 ```
 
-# Myst Feature Coverage
+## Usage as interop
+
+```rust
+use mystsh::interpreter::Interpreter;
+use std::io;
+
+fn main() -> io::Result<()> {
+    let mut interpreter = Interpreter::new();
+    interpreter.run_interactive()?;
+    Ok(())
+}
+```
+
+## Usage as parser
+
+```rust
+use mystsh::lexer::Lexer;
+use mystsh::parser::Parser;
+
+#[test]
+fn test_simple_command() {
+    let input = "echo hello world";
+    let lexer = Lexer::new(input);
+    let mut parser = Parser::new(lexer);
+    let result = parser.parse_script();
+
+    match result {
+        Node::List {
+            statements,
+            operators,
+        } => {
+            assert_eq!(statements.len(), 1);
+            assert_eq!(operators.len(), 0);
+
+            match &statements[0] {
+                Node::Command {
+                    name,
+                    args,
+                    redirects,
+                } => {
+                    assert_eq!(name, "echo");
+                    assert_eq!(args, &["hello", "world"]);
+                    assert_eq!(redirects.len(), 0);
+                }
+                _ => panic!("Expected Command node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}
+```
+
+## Myst Feature Coverage
 
 This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
 

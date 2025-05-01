@@ -1,4 +1,4 @@
-mod lexer;
+pub mod lexer;
 pub mod parser;
 
 #[cfg(feature = "formatter")]
