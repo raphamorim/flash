@@ -23,6 +23,12 @@ pub enum TokenKind {
     Comment,       // #
     CmdSubst,      // $(
     ExtGlob(char), // For ?(, *(, +(, @(, !(
+    // New token types for shell control flow
+    If,   // if keyword
+    Then, // then keyword
+    Elif, // elif keyword
+    Else, // else keyword
+    Fi,   // fi keyword
     EOF,
 }
 
@@ -97,6 +103,12 @@ impl Lexer {
         } else {
             self.input[self.read_position]
         }
+    }
+
+    // Helper to check if the current position is followed by whitespace or a special character
+    fn is_word_boundary(&self) -> bool {
+        let peek = self.peek_char();
+        peek.is_whitespace() || is_special_char(peek) || peek == '\0'
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -235,6 +247,149 @@ impl Lexer {
                 value: "".to_string(),
                 position: current_position,
             },
+            'i' => {
+                // Check for "if" keyword
+                if self.peek_char() == 'f' && self.position + 1 < self.input.len() {
+                    self.read_char(); // Consume 'f'
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::If,
+                            value: "if".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // If it's not a standalone "if", backtrack and treat as a word
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'i';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            't' => {
+                // Check for "then" keyword
+                if self.peek_char() == 'h'
+                    && self.position + 3 < self.input.len()
+                    && self.input[self.position + 1] == 'h'
+                    && self.input[self.position + 2] == 'e'
+                    && self.input[self.position + 3] == 'n'
+                {
+                    self.read_char(); // 'h'
+                    self.read_char(); // 'e'
+                    self.read_char(); // 'n'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Then,
+                            value: "then".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "then", backtrack and treat as a word
+                        self.position -= 3;
+                        self.read_position -= 3;
+                        self.column -= 3;
+                        self.ch = 't';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'e' => {
+                // Check for "else" or "elif" keywords
+                if self.peek_char() == 'l' && self.position + 3 < self.input.len() {
+                    self.read_char(); // 'l'
+
+                    if self.peek_char() == 's' {
+                        self.read_char(); // 's'
+                        if self.peek_char() == 'e' {
+                            self.read_char(); // 'e'
+                            if self.is_word_boundary() {
+                                Token {
+                                    kind: TokenKind::Else,
+                                    value: "else".to_string(),
+                                    position: current_position,
+                                }
+                            } else {
+                                // Not a standalone "else", backtrack
+                                self.position -= 3;
+                                self.read_position -= 3;
+                                self.column -= 3;
+                                self.ch = 'e';
+                                self.read_word()
+                            }
+                        } else {
+                            // Not "else", backtrack
+                            self.position -= 2;
+                            self.read_position -= 2;
+                            self.column -= 2;
+                            self.ch = 'e';
+                            self.read_word()
+                        }
+                    } else if self.peek_char() == 'i' {
+                        self.read_char(); // 'i'
+                        if self.peek_char() == 'f' {
+                            self.read_char(); // 'f'
+                            if self.is_word_boundary() {
+                                Token {
+                                    kind: TokenKind::Elif,
+                                    value: "elif".to_string(),
+                                    position: current_position,
+                                }
+                            } else {
+                                // Not a standalone "elif", backtrack
+                                self.position -= 3;
+                                self.read_position -= 3;
+                                self.column -= 3;
+                                self.ch = 'e';
+                                self.read_word()
+                            }
+                        } else {
+                            // Not "elif", backtrack
+                            self.position -= 2;
+                            self.read_position -= 2;
+                            self.column -= 2;
+                            self.ch = 'e';
+                            self.read_word()
+                        }
+                    } else {
+                        // Not "else" or "elif", backtrack
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'e';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'f' => {
+                // Check for "fi" keyword
+                if self.peek_char() == 'i' && self.position + 1 < self.input.len() {
+                    self.read_char(); // Consume 'i'
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Fi,
+                            value: "fi".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // If it's not a standalone "fi", backtrack and treat as a word
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'f';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
             _ => self.read_word(),
         };
 
@@ -317,8 +472,18 @@ impl Lexer {
             self.column -= 1;
         }
 
+        // Check for keywords after reading the full word
+        let token_kind = match word.as_str() {
+            "if" => TokenKind::If,
+            "then" => TokenKind::Then,
+            "elif" => TokenKind::Elif,
+            "else" => TokenKind::Else,
+            "fi" => TokenKind::Fi,
+            _ => TokenKind::Word(word.clone()),
+        };
+
         Token {
-            kind: TokenKind::Word(word.clone()),
+            kind: token_kind,
             value: word,
             position,
         }
@@ -373,5 +538,378 @@ mod lexer_tests {
             println!("Token: {:?}", token);
             token = lexer.next_token();
         }
+    }
+
+    fn test_tokens(input: &str, expected_tokens: Vec<TokenKind>) {
+        let mut lexer = Lexer::new(input);
+        for expected in expected_tokens {
+            let token = lexer.next_token();
+            assert_eq!(
+                token.kind, expected,
+                "Expected {:?} but got {:?} for input: {}",
+                expected, token.kind, input
+            );
+        }
+
+        // Ensure we've consumed all tokens
+        let final_token = lexer.next_token();
+        assert_eq!(
+            final_token.kind,
+            TokenKind::EOF,
+            "Expected EOF but got {:?}",
+            final_token.kind
+        );
+    }
+
+    #[test]
+    fn test_basic_tokens() {
+        let input = "ls -l | grep file";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("-l".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("grep".to_string()),
+            TokenKind::Word("file".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_assignment() {
+        let input = "VAR=value";
+        let expected = vec![
+            TokenKind::Word("VAR".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("value".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_redirections() {
+        let input = "ls > output.txt 2>&1";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Great,
+            TokenKind::Word("output.txt".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Great,
+            TokenKind::Word("&1".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_quoted_strings() {
+        let input = r#"echo "hello world" 'single quoted'"#;
+        let expected = vec![
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Word("world".to_string()),
+            TokenKind::Quote,
+            TokenKind::SingleQuote,
+            TokenKind::Word("single".to_string()),
+            TokenKind::Word("quoted".to_string()),
+            TokenKind::SingleQuote,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_command_substitution() {
+        let input = "echo $(ls -l)";
+        let expected = vec![
+            TokenKind::Word("echo".to_string()),
+            TokenKind::CmdSubst,
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("-l".to_string()),
+            TokenKind::RParen,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_variable_expansion() {
+        let input = "echo $HOME";
+        let expected = vec![
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("HOME".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_operators() {
+        let input = "cmd1 && cmd2 || cmd3";
+        let expected = vec![
+            TokenKind::Word("cmd1".to_string()),
+            TokenKind::And,
+            TokenKind::Word("cmd2".to_string()),
+            TokenKind::Or,
+            TokenKind::Word("cmd3".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_background_process() {
+        let input = "sleep 10 &";
+        let expected = vec![
+            TokenKind::Word("sleep".to_string()),
+            TokenKind::Word("10".to_string()),
+            TokenKind::Background,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_comments() {
+        let input = "echo hello # this is a comment";
+        let expected = vec![
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Comment,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_newlines() {
+        let input = "cmd1\ncmd2\ncmd3";
+        let expected = vec![
+            TokenKind::Word("cmd1".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("cmd2".to_string()),
+            TokenKind::Newline,
+            TokenKind::Word("cmd3".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    // Tests for shell control flow
+
+    #[test]
+    fn test_if_statement() {
+        let input = "if test -f file.txt; then echo found; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("test".to_string()),
+            TokenKind::Word("-f".to_string()),
+            TokenKind::Word("file.txt".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("found".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_if_with_newlines() {
+        let input = "if true\nthen\necho yes\nfi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("true".to_string()),
+            TokenKind::Newline,
+            TokenKind::Then,
+            TokenKind::Newline,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("yes".to_string()),
+            TokenKind::Newline,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_if_else_statement() {
+        let input = "if [ $a -eq 5 ]; then echo equal; else echo not equal; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("a".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("5".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("equal".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Else,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("not".to_string()),
+            TokenKind::Word("equal".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_if_elif_else_statement() {
+        let input =
+            "if [ $a -eq 1 ]; then echo one; elif [ $a -eq 2 ]; then echo two; else echo other; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("a".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("one".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Elif,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("a".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("two".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Else,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("other".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_nested_if_statements() {
+        let input = "if true; then if false; then echo nested; fi; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("true".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::If,
+            TokenKind::Word("false".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("nested".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_if_with_complex_command() {
+        let input = "if grep -q pattern file.txt; then echo found; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("grep".to_string()),
+            TokenKind::Word("-q".to_string()),
+            TokenKind::Word("pattern".to_string()),
+            TokenKind::Word("file.txt".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("found".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_control_flow_keywords_as_prefix() {
+        let input = "ifconfig && thenext && elifprocess && elseware && fifile";
+        let expected = vec![
+            TokenKind::Word("ifconfig".to_string()),
+            TokenKind::And,
+            TokenKind::Word("thenext".to_string()),
+            TokenKind::And,
+            TokenKind::Word("elifprocess".to_string()),
+            TokenKind::And,
+            TokenKind::Word("elseware".to_string()),
+            TokenKind::And,
+            TokenKind::Word("fifile".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_words_with_glob_patterns() {
+        let input = "ls *.txt file?.log [abc]*.tmp";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Word("file?.log".to_string()),
+            TokenKind::Word("[abc]*.tmp".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_extglob_patterns() {
+        // Test extended glob patterns
+        let input = "ls ?(file|temp).txt *(a|b|c).log +(1|2|3).dat";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("?(file|temp).txt".to_string()),
+            TokenKind::Word("*(a|b|c).log".to_string()),
+            TokenKind::Word("+(1|2|3).dat".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_mixed_keywords_and_words() {
+        let input = "if if_var=42; then echo then_var=42; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("if_var".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("42".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("then_var".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("42".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_command_substitution_in_if() {
+        let input = "if $(test -d /tmp); then echo directory exists; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::CmdSubst,
+            TokenKind::Word("test".to_string()),
+            TokenKind::Word("-d".to_string()),
+            TokenKind::Word("/tmp".to_string()),
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("directory".to_string()),
+            TokenKind::Word("exists".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
     }
 }
