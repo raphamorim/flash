@@ -10,7 +10,9 @@ It understands real-world shell code, handles edge cases, and offers structured 
 
 Myst was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
 
-## Install
+## Install as your shell
+
+Please remember that myst is still under development.
 
 ```bash
 git clone https://github.com/raphamorim/myst.git
