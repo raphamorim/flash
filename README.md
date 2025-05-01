@@ -4,7 +4,7 @@
 
 Myst is a fast, extensible, and hackable toolkit for working with POSIX-style shell scripts. It includes a parser, formatter, and interpreter built from scratch in Rust. Myst understands real-world shell syntax and provides structured AST access for static analysis, tooling, and transformation.
 
-> Inspired by mvdan/sh, but engineered from the ground up with performance and extensibility in mind.
+> Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but engineered from the ground up with performance and extensibility in mind.
 
 ## Motivation
 
@@ -130,9 +130,13 @@ This table outlines the supported features of POSIX Shell and Bash. Use it to tr
 
 ## 📦 Crate Info
 
-Add Myst to your Cargo.toml once it's published:
+Add Myst to your Cargo.toml:
 
 ```toml
 mystsh = "0.x"
 ```
 Until then, use a local path or Git dependency.
+
+## License
+
+[GPL-3.0 License](LICENSE) © [Raphael Amorim](https://github.com/raphamorim/)
