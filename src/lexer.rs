@@ -23,12 +23,25 @@ pub enum TokenKind {
     Comment,       // #
     CmdSubst,      // $(
     ExtGlob(char), // For ?(, *(, +(, @(, !(
-    // New token types for shell control flow
+    // Shell control flow keywords
     If,   // if keyword
     Then, // then keyword
     Elif, // elif keyword
     Else, // else keyword
     Fi,   // fi keyword
+    // Function declaration keyword
+    Function, // function keyword
+    // Loop keywords
+    For,   // for keyword
+    While, // while keyword
+    Until, // until keyword
+    Do,    // do keyword
+    Done,  // done keyword
+    In,    // in keyword (used in for loops)
+    // Break and continue for loops
+    Break,    // break keyword
+    Continue, // continue keyword
+    Return,   // return keyword (for functions)
     EOF,
 }
 
@@ -247,28 +260,6 @@ impl Lexer {
                 value: "".to_string(),
                 position: current_position,
             },
-            'i' => {
-                // Check for "if" keyword
-                if self.peek_char() == 'f' && self.position + 1 < self.input.len() {
-                    self.read_char(); // Consume 'f'
-                    if self.is_word_boundary() {
-                        Token {
-                            kind: TokenKind::If,
-                            value: "if".to_string(),
-                            position: current_position,
-                        }
-                    } else {
-                        // If it's not a standalone "if", backtrack and treat as a word
-                        self.position -= 1;
-                        self.read_position -= 1;
-                        self.column -= 1;
-                        self.ch = 'i';
-                        self.read_word()
-                    }
-                } else {
-                    self.read_word()
-                }
-            }
             't' => {
                 // Check for "then" keyword
                 if self.peek_char() == 'h'
@@ -386,6 +377,317 @@ impl Lexer {
                         self.ch = 'f';
                         self.read_word()
                     }
+                } else if self.position + 7 < self.input.len()
+                    && self.peek_char() == 'u'
+                    && self.input[self.position + 1] == 'u'
+                    && self.input[self.position + 2] == 'n'
+                    && self.input[self.position + 3] == 'c'
+                    && self.input[self.position + 4] == 't'
+                    && self.input[self.position + 5] == 'i'
+                    && self.input[self.position + 6] == 'o'
+                    && self.input[self.position + 7] == 'n'
+                {
+                    // Check for "function" keyword
+                    self.read_char(); // 'u'
+                    self.read_char(); // 'n'
+                    self.read_char(); // 'c'
+                    self.read_char(); // 't'
+                    self.read_char(); // 'i'
+                    self.read_char(); // 'o'
+                    self.read_char(); // 'n'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Function,
+                            value: "function".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "function", backtrack
+                        self.position -= 7;
+                        self.read_position -= 7;
+                        self.column -= 7;
+                        self.ch = 'f';
+                        self.read_word()
+                    }
+                } else if self.position + 2 < self.input.len()
+                    && self.peek_char() == 'o'
+                    && self.input[self.position + 1] == 'o'
+                    && self.input[self.position + 2] == 'r'
+                {
+                    // Check for "for" keyword
+                    self.read_char(); // 'o'
+                    self.read_char(); // 'r'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::For,
+                            value: "for".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "for", backtrack
+                        self.position -= 2;
+                        self.read_position -= 2;
+                        self.column -= 2;
+                        self.ch = 'f';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'u' => {
+                // Check for "until" keyword
+                if self.position + 4 < self.input.len()
+                    && self.peek_char() == 'n'
+                    && self.input[self.position + 1] == 'n'
+                    && self.input[self.position + 2] == 't'
+                    && self.input[self.position + 3] == 'i'
+                    && self.input[self.position + 4] == 'l'
+                {
+                    self.read_char(); // 'n'
+                    self.read_char(); // 't'
+                    self.read_char(); // 'i'
+                    self.read_char(); // 'l'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Until,
+                            value: "until".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "until", backtrack
+                        self.position -= 4;
+                        self.read_position -= 4;
+                        self.column -= 4;
+                        self.ch = 'u';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'r' => {
+                // Check for "return" keyword
+                if self.position + 5 < self.input.len()
+                    && self.peek_char() == 'e'
+                    && self.input[self.position + 1] == 'e'
+                    && self.input[self.position + 2] == 't'
+                    && self.input[self.position + 3] == 'u'
+                    && self.input[self.position + 4] == 'r'
+                    && self.input[self.position + 5] == 'n'
+                {
+                    self.read_char(); // 'e'
+                    self.read_char(); // 't'
+                    self.read_char(); // 'u'
+                    self.read_char(); // 'r'
+                    self.read_char(); // 'n'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Return,
+                            value: "return".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "return", backtrack
+                        self.position -= 5;
+                        self.read_position -= 5;
+                        self.column -= 5;
+                        self.ch = 'r';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'w' => {
+                // Check for "while" keyword
+                if self.position + 4 < self.input.len()
+                    && self.peek_char() == 'h'
+                    && self.input[self.position + 1] == 'h'
+                    && self.input[self.position + 2] == 'i'
+                    && self.input[self.position + 3] == 'l'
+                    && self.input[self.position + 4] == 'e'
+                {
+                    self.read_char(); // 'h'
+                    self.read_char(); // 'i'
+                    self.read_char(); // 'l'
+                    self.read_char(); // 'e'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::While,
+                            value: "while".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "while", backtrack
+                        self.position -= 4;
+                        self.read_position -= 4;
+                        self.column -= 4;
+                        self.ch = 'w';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'd' => {
+                // Check for "do" or "done" keywords
+                if self.peek_char() == 'o' && self.position + 1 < self.input.len() {
+                    self.read_char(); // 'o'
+
+                    if self.peek_char() == 'n'
+                        && self.position + 2 < self.input.len()
+                        && self.input[self.position + 1] == 'n'
+                        && self.input[self.position + 2] == 'e'
+                    {
+                        self.read_char(); // 'n'
+                        self.read_char(); // 'e'
+
+                        if self.is_word_boundary() {
+                            Token {
+                                kind: TokenKind::Done,
+                                value: "done".to_string(),
+                                position: current_position,
+                            }
+                        } else {
+                            // Not a standalone "done", backtrack
+                            self.position -= 3;
+                            self.read_position -= 3;
+                            self.column -= 3;
+                            self.ch = 'd';
+                            self.read_word()
+                        }
+                    } else if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Do,
+                            value: "do".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "do", backtrack
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'd';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'b' => {
+                // Check for "break" keyword
+                if self.position + 4 < self.input.len()
+                    && self.peek_char() == 'r'
+                    && self.input[self.position + 1] == 'r'
+                    && self.input[self.position + 2] == 'e'
+                    && self.input[self.position + 3] == 'a'
+                    && self.input[self.position + 4] == 'k'
+                {
+                    self.read_char(); // 'r'
+                    self.read_char(); // 'e'
+                    self.read_char(); // 'a'
+                    self.read_char(); // 'k'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Break,
+                            value: "break".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "break", backtrack
+                        self.position -= 4;
+                        self.read_position -= 4;
+                        self.column -= 4;
+                        self.ch = 'b';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'c' => {
+                // Check for "continue" keyword
+                if self.position + 7 < self.input.len()
+                    && self.peek_char() == 'o'
+                    && self.input[self.position + 1] == 'o'
+                    && self.input[self.position + 2] == 'n'
+                    && self.input[self.position + 3] == 't'
+                    && self.input[self.position + 4] == 'i'
+                    && self.input[self.position + 5] == 'n'
+                    && self.input[self.position + 6] == 'u'
+                    && self.input[self.position + 7] == 'e'
+                {
+                    self.read_char(); // 'o'
+                    self.read_char(); // 'n'
+                    self.read_char(); // 't'
+                    self.read_char(); // 'i'
+                    self.read_char(); // 'n'
+                    self.read_char(); // 'u'
+                    self.read_char(); // 'e'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Continue,
+                            value: "continue".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "continue", backtrack
+                        self.position -= 7;
+                        self.read_position -= 7;
+                        self.column -= 7;
+                        self.ch = 'c';
+                        self.read_word()
+                    }
+                } else {
+                    self.read_word()
+                }
+            }
+            'i' => {
+                // Check for "if" keyword
+                if self.peek_char() == 'f' && self.position + 1 < self.input.len() {
+                    self.read_char(); // Consume 'f'
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::If,
+                            value: "if".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // If it's not a standalone "if", backtrack and treat as a word
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'i';
+                        self.read_word()
+                    }
+                } else if self.position + 1 < self.input.len() &&
+                // check in
+               self.peek_char() == 'n'
+                {
+                    self.read_char(); // 'n'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::In,
+                            value: "in".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "in", backtrack
+                        self.position -= 1;
+                        self.read_position -= 1;
+                        self.column -= 1;
+                        self.ch = 'i';
+                        self.read_word()
+                    }
                 } else {
                     self.read_word()
                 }
@@ -479,6 +781,16 @@ impl Lexer {
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             "fi" => TokenKind::Fi,
+            "for" => TokenKind::For,
+            "while" => TokenKind::While,
+            "until" => TokenKind::Until,
+            "do" => TokenKind::Do,
+            "done" => TokenKind::Done,
+            "in" => TokenKind::In,
+            "function" => TokenKind::Function,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
+            "return" => TokenKind::Return,
             _ => TokenKind::Word(word.clone()),
         };
 
@@ -909,6 +1221,330 @@ mod lexer_tests {
             TokenKind::Word("exists".to_string()),
             TokenKind::Semicolon,
             TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_function_declaration() {
+        let input = "function greet() { echo hello; }";
+        let expected = vec![
+            TokenKind::Function,
+            TokenKind::Word("greet".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_function_declaration_alternate_syntax() {
+        let input = "greet() { echo hello; }";
+        let expected = vec![
+            TokenKind::Word("greet".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("hello".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_function_call() {
+        let input = "greet; greet arg1 arg2";
+        let expected = vec![
+            TokenKind::Word("greet".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("greet".to_string()),
+            TokenKind::Word("arg1".to_string()),
+            TokenKind::Word("arg2".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_function_with_return() {
+        let input = "function check() { if [ $1 -eq 0 ]; then return 1; fi; echo ok; }";
+        let expected = vec![
+            TokenKind::Function,
+            TokenKind::Word("check".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("0".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Return,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+            TokenKind::Semicolon,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("ok".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_function_multiline() {
+        let input = "function hello() {\n  echo \"Hello, world!\"\n  return 0\n}";
+        let expected = vec![
+            TokenKind::Function,
+            TokenKind::Word("hello".to_string()),
+            TokenKind::LParen,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::Newline,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("Hello,".to_string()),
+            TokenKind::Word("world!".to_string()),
+            TokenKind::Quote,
+            TokenKind::Newline,
+            TokenKind::Return,
+            TokenKind::Word("0".to_string()),
+            TokenKind::Newline,
+            TokenKind::RBrace,
+        ];
+        test_tokens(input, expected);
+    }
+
+    // For Loop Tests
+
+    #[test]
+    fn test_for_loop_basic() {
+        let input = "for i in 1 2 3; do echo $i; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::Word("i".to_string()),
+            TokenKind::In,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("3".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_for_loop_with_glob() {
+        let input = "for file in *.txt; do cat $file; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::Word("file".to_string()),
+            TokenKind::In,
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::Word("cat".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("file".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_for_loop_multiline() {
+        let input = "for i in $(seq 1 10)\ndo\n  echo $i\ndone";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::Word("i".to_string()),
+            TokenKind::In,
+            TokenKind::CmdSubst,
+            TokenKind::Word("seq".to_string()),
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("10".to_string()),
+            TokenKind::RParen,
+            TokenKind::Newline,
+            TokenKind::Do,
+            TokenKind::Newline,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Newline,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_for_loop_with_break() {
+        let input = "for i in 1 2 3; do if [ $i -eq 2 ]; then break; fi; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::Word("i".to_string()),
+            TokenKind::In,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("3".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Break,
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_for_loop_with_continue() {
+        let input = "for i in 1 2 3; do if [ $i -eq 2 ]; then continue; fi; echo $i; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::Word("i".to_string()),
+            TokenKind::In,
+            TokenKind::Word("1".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("3".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Word("-eq".to_string()),
+            TokenKind::Word("2".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Continue,
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+            TokenKind::Semicolon,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_c_style_for_loop() {
+        let input = "for ((i=0; i<5; i++)); do echo $i; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::LParen,
+            TokenKind::LParen,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("0".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Less,
+            TokenKind::Word("5".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Word("++".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    // While Loop Tests
+
+    #[test]
+    fn test_while_loop_basic() {
+        let input = "while [ $i -lt 10 ]; do echo $i; i=$((i+1)); done";
+        let expected = vec![
+            TokenKind::While,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Word("-lt".to_string()),
+            TokenKind::Word("10".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Assignment,
+            TokenKind::CmdSubst,
+            TokenKind::LParen,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Word("+1".to_string()),
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_while_loop_multiline() {
+        let input = "while true\ndo\n  echo looping\n  if [ $count -gt 10 ]; then break; fi\ndone";
+        let expected = vec![
+            TokenKind::While,
+            TokenKind::Word("true".to_string()),
+            TokenKind::Newline,
+            TokenKind::Do,
+            TokenKind::Newline,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("looping".to_string()),
+            TokenKind::Newline,
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("count".to_string()),
+            TokenKind::Word("-gt".to_string()),
+            TokenKind::Word("10".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Break,
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+            TokenKind::Newline,
+            TokenKind::Done,
         ];
         test_tokens(input, expected);
     }
