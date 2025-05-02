@@ -152,6 +152,9 @@ impl Formatter {
             }
             Node::VariableAssignmentCommand { .. } => todo!(),
             Node::ExtGlobPattern { .. } => todo!(),
+            &Node::IfStatement { .. } | &Node::ElifBranch { .. } | &Node::ElseBranch { .. } => {
+                todo!()
+            }
         }
     }
 }

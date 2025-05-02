@@ -134,7 +134,7 @@ impl Lexer {
         let token = match self.ch {
             '+' => {
                 if self.peek_char() == '+' {
-                    self.read_char(); // Consume the second '+'
+                    self.read_char();
                     Token {
                         kind: TokenKind::Increment,
                         value: "++".to_string(),
@@ -143,7 +143,7 @@ impl Lexer {
                 } else {
                     self.read_word()
                 }
-            },
+            }
             '=' => Token {
                 kind: TokenKind::Assignment,
                 value: "=".to_string(),
@@ -1488,6 +1488,36 @@ mod lexer_tests {
             TokenKind::Semicolon,
             TokenKind::Word("i".to_string()),
             TokenKind::Increment,
+            TokenKind::RParen,
+            TokenKind::RParen,
+            TokenKind::Semicolon,
+            TokenKind::Do,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Dollar,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Done,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_c_style_for_loop_using_decrement() {
+        let input = "for ((i=5; i>0; i--)); do echo $i; done";
+        let expected = vec![
+            TokenKind::For,
+            TokenKind::LParen,
+            TokenKind::LParen,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Word("5".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Great,
+            TokenKind::Word("0".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Word("i".to_string()),
+            TokenKind::Decrement,
             TokenKind::RParen,
             TokenKind::RParen,
             TokenKind::Semicolon,

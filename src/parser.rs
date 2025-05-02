@@ -39,6 +39,19 @@ pub enum Node {
         patterns: Vec<String>, // The pattern list inside the parentheses
         suffix: String,        // Any text that follows the closing parenthesis
     },
+    // New enum variants for if statements
+    IfStatement {
+        condition: Box<Node>,
+        consequence: Box<Node>,
+        alternative: Option<Box<Node>>,
+    },
+    ElifBranch {
+        condition: Box<Node>,
+        consequence: Box<Node>,
+    },
+    ElseBranch {
+        consequence: Box<Node>,
+    },
 }
 
 /// Redirection types
@@ -90,7 +103,7 @@ impl Parser {
 
     pub fn parse_statement(&mut self) -> Option<Node> {
         match self.current_token.kind {
-            TokenKind::Word(ref _word) => {
+            TokenKind::Word(ref word) => {
                 // Check for variable assignment (VAR=value)
                 if let TokenKind::Assignment = self.peek_token.kind {
                     return Some(self.parse_command_with_assignments());
@@ -99,6 +112,9 @@ impl Parser {
                 // Regular command
                 Some(self.parse_command())
             }
+            TokenKind::If => Some(self.parse_if_statement()),
+            TokenKind::Elif => Some(self.parse_elif_branch()),
+            TokenKind::Else => Some(self.parse_else_branch()),
             TokenKind::LParen => Some(self.parse_subshell()),
             TokenKind::Comment => {
                 let comment = self.current_token.value.clone();
@@ -107,6 +123,230 @@ impl Parser {
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
             _ => None,
+        }
+    }
+
+    // Parse if statement
+    fn parse_if_statement(&mut self) -> Node {
+        self.next_token(); // Skip "if"
+
+        // Parse condition until we hit "then"
+        let condition = self.parse_until_token_kind(TokenKind::Then);
+
+        self.next_token(); // Skip "then"
+
+        // Parse consequence (body of the if block)
+        let consequence =
+            self.parse_until_token_kinds(&[TokenKind::Elif, TokenKind::Else, TokenKind::Fi]);
+
+        // Check for elif or else branches
+        let alternative = match self.current_token.kind {
+            TokenKind::Elif => Some(Box::new(self.parse_elif_branch())),
+            TokenKind::Else => Some(Box::new(self.parse_else_branch())),
+            TokenKind::Fi => {
+                self.next_token(); // Skip "fi"
+                None
+            }
+            _ => None,
+        };
+
+        Node::IfStatement {
+            condition: Box::new(condition),
+            consequence: Box::new(consequence),
+            alternative,
+        }
+    }
+
+    // Parse elif branch
+    fn parse_elif_branch(&mut self) -> Node {
+        self.next_token(); // Skip "elif"
+
+        // Parse condition until we hit "then"
+        let condition = self.parse_until_token_kind(TokenKind::Then);
+
+        self.next_token(); // Skip "then"
+
+        // Parse consequence (body of the elif block)
+        let consequence =
+            self.parse_until_token_kinds(&[TokenKind::Elif, TokenKind::Else, TokenKind::Fi]);
+
+        // Handle what follows this elif
+        let node = Node::ElifBranch {
+            condition: Box::new(condition),
+            consequence: Box::new(consequence),
+        };
+
+        // Chain multiple elif/else statements
+        match self.current_token.kind {
+            TokenKind::Elif => {
+                let next_branch = self.parse_elif_branch();
+                Node::IfStatement {
+                    condition: Box::new(node.clone()),
+                    consequence: match node {
+                        Node::ElifBranch { consequence, .. } => consequence,
+                        _ => unreachable!(),
+                    },
+                    alternative: Some(Box::new(next_branch)),
+                }
+            }
+            TokenKind::Else => {
+                let else_branch = self.parse_else_branch();
+                Node::IfStatement {
+                    condition: Box::new(node.clone()),
+                    consequence: match node {
+                        Node::ElifBranch { consequence, .. } => consequence,
+                        _ => unreachable!(),
+                    },
+                    alternative: Some(Box::new(else_branch)),
+                }
+            }
+            TokenKind::Fi => {
+                self.next_token(); // Skip "fi"
+                node
+            }
+            _ => node,
+        }
+    }
+
+    // Parse else branch
+    fn parse_else_branch(&mut self) -> Node {
+        self.next_token(); // Skip "else"
+
+        // Parse consequence (body of the else block)
+        let consequence = self.parse_until_token_kind(TokenKind::Fi);
+
+        self.next_token(); // Skip "fi"
+
+        Node::ElseBranch {
+            consequence: Box::new(consequence),
+        }
+    }
+
+    // Helper method to parse statements until a specific token kind is encountered
+    fn parse_until_token_kind(&mut self, stop_at: TokenKind) -> Node {
+        let mut statements = Vec::new();
+        let mut operators = Vec::new();
+
+        while self.current_token.kind != stop_at && self.current_token.kind != TokenKind::EOF {
+            if let Some(statement) = self.parse_statement() {
+                statements.push(statement);
+
+                // Check for operators between statements
+                match self.current_token.kind {
+                    TokenKind::Semicolon => {
+                        operators.push(";".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Newline => {
+                        operators.push("\n".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::And => {
+                        operators.push("&&".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Background => {
+                        operators.push("&".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Or => {
+                        operators.push("||".to_string());
+                        self.next_token();
+                    }
+                    _ => {
+                        if statements.len() > 1 && operators.len() < statements.len() - 1 {
+                            operators.push("".to_string());
+                        }
+                    }
+                }
+            } else {
+                // Skip tokens that don't form valid statements
+                self.next_token();
+            }
+        }
+
+        // Ensure we have the right number of operators
+        while operators.len() < statements.len() - 1 {
+            operators.push("".to_string());
+        }
+
+        // If we have statements, return a List node; otherwise, return an empty Command node
+        if !statements.is_empty() {
+            Node::List {
+                statements,
+                operators,
+            }
+        } else {
+            Node::Command {
+                name: String::new(),
+                args: Vec::new(),
+                redirects: Vec::new(),
+            }
+        }
+    }
+
+    // Helper method to parse statements until one of several token kinds is encountered
+    fn parse_until_token_kinds(&mut self, stop_at: &[TokenKind]) -> Node {
+        let mut statements = Vec::new();
+        let mut operators = Vec::new();
+
+        while !stop_at.contains(&self.current_token.kind)
+            && self.current_token.kind != TokenKind::EOF
+        {
+            if let Some(statement) = self.parse_statement() {
+                statements.push(statement);
+
+                // Check for operators between statements
+                match self.current_token.kind {
+                    TokenKind::Semicolon => {
+                        operators.push(";".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Newline => {
+                        operators.push("\n".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::And => {
+                        operators.push("&&".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Background => {
+                        operators.push("&".to_string());
+                        self.next_token();
+                    }
+                    TokenKind::Or => {
+                        operators.push("||".to_string());
+                        self.next_token();
+                    }
+                    _ => {
+                        if statements.len() > 1 && operators.len() < statements.len() - 1 {
+                            operators.push("".to_string());
+                        }
+                    }
+                }
+            } else {
+                // Skip tokens that don't form valid statements
+                self.next_token();
+            }
+        }
+
+        // Ensure we have the right number of operators
+        while operators.len() < statements.len() - 1 {
+            operators.push("".to_string());
+        }
+
+        // If we have statements, return a List node; otherwise, return an empty Command node
+        if !statements.is_empty() {
+            Node::List {
+                statements,
+                operators,
+            }
+        } else {
+            Node::Command {
+                name: String::new(),
+                args: Vec::new(),
+                redirects: Vec::new(),
+            }
         }
     }
 
@@ -915,6 +1155,7 @@ fi
         // This test just checks that parsing doesn't panic
         let result = parse_test(input);
 
+        assert_eq!(format!("{:?}", result), "a");
         assert_eq!(
             result,
             Node::List {
@@ -922,7 +1163,6 @@ fi
                 operators: vec!["\n".to_string(), "\n".to_string(), "".to_string()],
             }
         );
-        assert_eq!(format!("{:?}", result), "a");
         // Verify we got a List node at the top level
         match result {
             Node::List {
@@ -1110,21 +1350,6 @@ function hello() {
 }
 
 hello World
-"#;
-
-        // This would require additional parsing logic not present in the current code
-        // Just verify it doesn't panic
-        let _result = parse_test(input);
-    }
-
-    #[test]
-    fn test_if_statement() {
-        let input = r#"
-if [ "$1" = "test" ]; then
-    echo "This is a test"
-else
-    echo "This is not a test"
-fi
 "#;
 
         // This would require additional parsing logic not present in the current code
@@ -1665,6 +1890,287 @@ esac
         // For now, just verify that parsing doesn't panic
         // More rigorous validation once the feature is implemented
         assert!(matches!(result, Node::List { .. }));
+    }
+
+    #[test]
+    fn test_if_statement() {
+        let input = r#"
+if [ "$1" = "test" ]; then
+    echo "This is a test"
+else
+    echo "This is not a test"
+fi
+"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let result = parser.parse_script();
+
+        // We expect the Node::List with a single IfStatement inside
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::IfStatement {
+                condition,
+                consequence,
+                alternative,
+            } = &statements[0]
+            {
+                // Check the condition contains a test command
+                if let Node::Command { name, args, .. } = &**condition {
+                    assert_eq!(name, "[");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "$1");
+                    assert_eq!(args[1], "=");
+                    assert_eq!(args[2], "test");
+                } else {
+                    panic!("Expected condition to be a Command node");
+                }
+
+                // Check the consequence contains an echo command
+                if let Node::List { statements, .. } = &**consequence {
+                    assert_eq!(statements.len(), 1);
+                    if let Node::Command { name, args, .. } = &statements[0] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "This is a test");
+                    } else {
+                        panic!("Expected consequence command to be an echo command");
+                    }
+                } else {
+                    panic!("Expected consequence to be a List node");
+                }
+
+                // Check the alternative contains an echo command
+                if let Some(alt) = alternative {
+                    if let Node::ElseBranch {
+                        consequence: else_consequence,
+                    } = &**alt
+                    {
+                        if let Node::List { statements, .. } = &**else_consequence {
+                            assert_eq!(statements.len(), 1);
+                            if let Node::Command { name, args, .. } = &statements[0] {
+                                assert_eq!(name, "echo");
+                                assert_eq!(args.len(), 1);
+                                assert_eq!(args[0], "This is not a test");
+                            } else {
+                                panic!("Expected else block to contain an echo command");
+                            }
+                        } else {
+                            panic!("Expected else consequence to be a List node");
+                        }
+                    } else {
+                        panic!("Expected alternative to be an ElseBranch node");
+                    }
+                } else {
+                    panic!("Expected if statement to have an else branch");
+                }
+            } else {
+                panic!("Expected script to contain an IfStatement node");
+            }
+        } else {
+            panic!("Expected parser output to be a List node");
+        }
+    }
+
+    #[test]
+    fn test_if_elif_else_statement() {
+        let input = r#"
+if [ "$1" = "test1" ]; then
+    echo "This is test1"
+elif [ "$1" = "test2" ]; then
+    echo "This is test2"
+else
+    echo "This is neither test1 nor test2"
+fi
+"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let result = parser.parse_script();
+
+        // Verify that we get a List node with an IfStatement
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::IfStatement {
+                condition,
+                consequence,
+                alternative,
+            } = &statements[0]
+            {
+                // Check first condition (if)
+                if let Node::Command { name, args, .. } = &**condition {
+                    assert_eq!(name, "[");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "$1");
+                    assert_eq!(args[1], "=");
+                    assert_eq!(args[2], "test1");
+                } else {
+                    panic!("Expected condition to be a Command node");
+                }
+
+                // Check first consequence (then block)
+                if let Node::List { statements, .. } = &**consequence {
+                    assert_eq!(statements.len(), 1);
+                    if let Node::Command { name, args, .. } = &statements[0] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "This is test1");
+                    } else {
+                        panic!("Expected 'then' block to contain an echo command");
+                    }
+                } else {
+                    panic!("Expected 'then' consequence to be a List node");
+                }
+
+                // Check the elif and else branches
+                if let Some(alt) = alternative {
+                    // The alternative should be an elif branch
+                    if let Node::ElifBranch {
+                        condition: elif_condition,
+                        consequence: elif_consequence,
+                    } = &**alt
+                    {
+                        // Check elif condition
+                        if let Node::Command { name, args, .. } = &**elif_condition {
+                            assert_eq!(name, "[");
+                            assert_eq!(args.len(), 3);
+                            assert_eq!(args[0], "$1");
+                            assert_eq!(args[1], "=");
+                            assert_eq!(args[2], "test2");
+                        } else {
+                            panic!("Expected elif condition to be a Command node");
+                        }
+
+                        // Check elif consequence
+                        if let Node::List { statements, .. } = &**elif_consequence {
+                            assert_eq!(statements.len(), 1);
+                            if let Node::Command { name, args, .. } = &statements[0] {
+                                assert_eq!(name, "echo");
+                                assert_eq!(args.len(), 1);
+                                assert_eq!(args[0], "This is test2");
+                            } else {
+                                panic!("Expected elif consequence to contain an echo command");
+                            }
+                        } else {
+                            panic!("Expected elif consequence to be a List node");
+                        }
+                    } else {
+                        panic!("Expected first alternative to be an ElifBranch node");
+                    }
+                } else {
+                    panic!("Expected if statement to have an elif branch");
+                }
+            } else {
+                panic!("Expected script to contain an IfStatement node");
+            }
+        } else {
+            panic!("Expected parser output to be a List node");
+        }
+    }
+
+    #[test]
+    fn test_multiple_elif_statements() {
+        let input = r#"
+if [ "$1" = "test1" ]; then
+    echo "This is test1"
+elif [ "$1" = "test2" ]; then
+    echo "This is test2"
+elif [ "$1" = "test3" ]; then
+    echo "This is test3"
+else
+    echo "Unknown test"
+fi
+"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let result = parser.parse_script();
+
+        // Basic assertion that parsing completes without errors
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+            assert!(matches!(statements[0], Node::IfStatement { .. }));
+        } else {
+            panic!("Expected parser output to be a List node");
+        }
+    }
+
+    #[test]
+    fn test_if_without_else() {
+        let input = r#"
+if [ "$1" = "test" ]; then
+    echo "This is a test"
+fi
+"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::IfStatement {
+                condition,
+                consequence,
+                alternative,
+            } = &statements[0]
+            {
+                // Condition should be the test command
+                assert!(matches!(**condition, Node::Command { .. }));
+
+                // Consequence should be a List containing the echo command
+                assert!(matches!(**consequence, Node::List { .. }));
+
+                // There should be no alternative
+                assert!(alternative.is_none());
+            } else {
+                panic!("Expected an IfStatement node");
+            }
+        } else {
+            panic!("Expected parser output to be a List node");
+        }
+    }
+
+    #[test]
+    fn test_nested_if_statements() {
+        let input = r#"
+if [ "$1" = "outer" ]; then
+    if [ "$2" = "inner" ]; then
+        echo "Nested condition met"
+    else
+        echo "Outer condition met, inner not met"
+    fi
+else
+    echo "Outer condition not met"
+fi
+"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let result = parser.parse_script();
+
+        // Basic assertion that parsing completes without errors
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+            assert!(matches!(statements[0], Node::IfStatement { .. }));
+
+            // Check that the outer if's consequence contains another if statement
+            if let Node::IfStatement { consequence, .. } = &statements[0] {
+                if let Node::List {
+                    statements: inner_statements,
+                    ..
+                } = &**consequence
+                {
+                    assert!(
+                        inner_statements
+                            .iter()
+                            .any(|node| matches!(node, Node::IfStatement { .. }))
+                    );
+                } else {
+                    panic!("Expected outer if's consequence to be a List node");
+                }
+            }
+        } else {
+            panic!("Expected parser output to be a List node");
+        }
     }
 
     #[test]
