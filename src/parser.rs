@@ -20,7 +20,7 @@ pub enum Node {
     },
     Assignment {
         name: String,
-        value: Box<Node>, // Can now be a String or CommandSubstitution
+        value: Box<Node>,
     },
     CommandSubstitution {
         command: Box<Node>,
@@ -29,7 +29,7 @@ pub enum Node {
         list: Box<Node>,
     },
     Comment(String),
-    StringLiteral(String), // Added for string literals
+    StringLiteral(String),
     VariableAssignmentCommand {
         assignments: Vec<Node>,
         command: Box<Node>,
@@ -39,7 +39,6 @@ pub enum Node {
         patterns: Vec<String>, // The pattern list inside the parentheses
         suffix: String,        // Any text that follows the closing parenthesis
     },
-    // New enum variants for if statements
     IfStatement {
         condition: Box<Node>,
         consequence: Box<Node>,
@@ -103,7 +102,7 @@ impl Parser {
 
     pub fn parse_statement(&mut self) -> Option<Node> {
         match self.current_token.kind {
-            TokenKind::Word(ref word) => {
+            TokenKind::Word(ref _word) => {
                 // Check for variable assignment (VAR=value)
                 if let TokenKind::Assignment = self.peek_token.kind {
                     return Some(self.parse_command_with_assignments());
@@ -222,7 +221,7 @@ impl Parser {
         }
     }
 
-    // Helper method to parse statements until a specific token kind is encountered
+    // method to parse statements until a specific token kind is encountered
     fn parse_until_token_kind(&mut self, stop_at: TokenKind) -> Node {
         let mut statements = Vec::new();
         let mut operators = Vec::new();
@@ -624,7 +623,6 @@ impl Parser {
         }
     }
 
-    // Fix for command substitution
     pub fn parse_command_substitution(&mut self) -> Node {
         self.next_token(); // Skip '$('
 
@@ -719,7 +717,7 @@ impl Parser {
             value: var_value,
         };
 
-        // Check if we have more assignments
+        // Does have more assignments?
         let mut assignments = vec![first_assignment];
 
         while let TokenKind::Word(ref _word) = self.current_token.kind {
@@ -728,7 +726,7 @@ impl Parser {
                 let next_assignment = self.parse_assignment();
                 assignments.push(next_assignment);
             } else {
-                // This is the start of a command that follows the assignments
+                // start of a command that follows the assignments
                 let command = self.parse_command();
                 assignments.push(command);
                 break;
@@ -740,14 +738,13 @@ impl Parser {
             return assignments[0].clone();
         }
 
-        // Create a list containing all assignments (and potentially a command)
+        // create a list containing all assignments (and potentially a command)
         Node::List {
             statements: assignments.clone(),
             operators: vec!["".to_string(); assignments.len() - 1],
         }
     }
 
-    // Fix for logical operators
     pub fn parse_script(&mut self) -> Node {
         let mut statements = Vec::new();
         let mut operators = Vec::new();
@@ -792,7 +789,7 @@ impl Parser {
             }
         }
 
-        // Ensure we have the right number of operators
+        // make sure we have the right number of operators
         while operators.len() < statements.len() - 1 {
             operators.push("".to_string());
         }
@@ -886,7 +883,6 @@ impl Parser {
 mod parser_tests {
     use super::*;
 
-    // Helper function to parse a command string and return the AST
     fn parse_test(input: &str) -> Node {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
@@ -931,7 +927,7 @@ mod parser_tests {
         match result {
             Node::List {
                 statements,
-                operators,
+                operators: _,
             } => {
                 assert_eq!(statements.len(), 1);
 

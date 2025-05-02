@@ -58,8 +58,8 @@ pub struct Token {
 /// Source position information
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
-    line: usize,
-    column: usize,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Position {
@@ -72,7 +72,6 @@ fn is_special_char(ch: char) -> bool {
     match ch {
         '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '{' | '}' | '<' | '>' | '$' | '"' | '\''
         | '`' | '#' | '+' => true,
-        // Removed '?', '*', '+', '@', '!' to allow them in normal words
         _ => false,
     }
 }
@@ -120,7 +119,7 @@ impl Lexer {
         }
     }
 
-    // Helper to check if the current position is followed by whitespace or a special character
+    // check if the current position is followed by whitespace or a special character
     fn is_word_boundary(&self) -> bool {
         let peek = self.peek_char();
         peek.is_whitespace() || is_special_char(peek) || peek == '\0'
@@ -1341,8 +1340,6 @@ mod lexer_tests {
         test_tokens(input, expected);
     }
 
-    // For Loop Tests
-
     #[test]
     fn test_for_loop_basic() {
         let input = "for i in 1 2 3; do echo $i; done";
@@ -1530,8 +1527,6 @@ mod lexer_tests {
         ];
         test_tokens(input, expected);
     }
-
-    // While Loop Tests
 
     #[test]
     fn test_while_loop_basic() {
