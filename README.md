@@ -183,7 +183,14 @@ Add Myst to your Cargo.toml:
 ```toml
 mystsh = "0.x"
 ```
-Until then, use a local path or Git dependency.
+
+## TODO
+
+- [ ] If for parser and interop.
+- [ ] Functions for parser and interop.
+- [ ] Loops for parser and interop.
+- [ ] Array for parser and interop.
+- [ ] Control + w.
 
 ## License
 
