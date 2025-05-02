@@ -1,4 +1,4 @@
-# myst
+# myst (work in progress)
 
 *A mystical shell parser, formatter, and interpreter written in Rust.*
 
