@@ -205,7 +205,6 @@ mystsh = "0.x"
 - [ ] Functions for parser and interop.
 - [ ] Loops for parser and interop.
 - [ ] Array for parser and interop.
-- [ ] Control + w.
 
 ## License
 

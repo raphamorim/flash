@@ -461,6 +461,47 @@ impl Interpreter {
                     }
                 }
 
+                // Ctrl-W (delete word)
+                23 => {
+                    // Delete the word before the cursor
+                    if cursor_pos > 0 {
+                        // Find the start of the current word
+                        let mut word_start = cursor_pos;
+                        let buffer_bytes = buffer.as_bytes();
+
+                        // Skip any whitespace immediately before cursor
+                        while word_start > 0 && buffer_bytes[word_start - 1].is_ascii_whitespace() {
+                            word_start -= 1;
+                        }
+
+                        // Now find the start of the word
+                        while word_start > 0 && !buffer_bytes[word_start - 1].is_ascii_whitespace()
+                        {
+                            word_start -= 1;
+                        }
+
+                        // Delete from word_start to cursor_pos
+                        if word_start < cursor_pos {
+                            buffer.replace_range(word_start..cursor_pos, "");
+                            cursor_pos = word_start;
+
+                            // Redraw the line
+                            write!(stdout, "\r$ {}", buffer)?;
+                            write!(stdout, "                    ")?; // Clear any leftovers
+                            write!(stdout, "\r$ {}", buffer)?;
+                            stdout.flush()?;
+                        }
+                    }
+                }
+
+                // Ctrl-L (clear screen)
+                12 => {
+                    // Clear the screen and redraw the prompt
+                    write!(stdout, "\x1B[2J\x1B[H")?; // ANSI escape sequence to clear screen and move cursor to home
+                    write!(stdout, "$ {}", buffer)?;
+                    stdout.flush()?;
+                }
+
                 // Ctrl-C
                 3 => {
                     println!("^C");
