@@ -50,10 +50,8 @@ impl Interpreter {
         if let Some(ref file_path) = history_file {
             if let Ok(file) = fs::File::open(file_path) {
                 let reader = io::BufReader::new(file);
-                for line in reader.lines() {
-                    if let Ok(line) = line {
-                        history.push(line);
-                    }
+                for line in reader.lines().map_while(Result::ok) {
+                    history.push(line);
                 }
             }
         }
@@ -350,30 +348,36 @@ impl Interpreter {
                 b'\t' => {
                     let completions = self.generate_completions(&buffer, cursor_pos);
 
-                    if completions.len() == 1 {
-                        // If there's only one completion, use it
-                        let completion = &completions[0];
-                        buffer.insert_str(cursor_pos, completion);
-                        cursor_pos += completion.len();
-
-                        // Redraw the line with the completion
-                        write!(stdout, "\r$ {}", buffer)?;
-                        stdout.flush()?;
-                    } else if completions.len() > 1 {
-                        // Show multiple completions
-                        self.display_completions(&completions)?;
-
-                        // Find the common prefix among completions
-                        if let Some(common_prefix) = self.find_common_prefix(&completions) {
-                            if !common_prefix.is_empty() {
-                                buffer.insert_str(cursor_pos, &common_prefix);
-                                cursor_pos += common_prefix.len();
-                            }
+                    match completions.len().cmp(&1) {
+                        std::cmp::Ordering::Less => {
+                            // Do nothing
                         }
+                        std::cmp::Ordering::Equal => {
+                            // If there's only one completion, use it
+                            let completion = &completions[0];
+                            buffer.insert_str(cursor_pos, completion);
+                            cursor_pos += completion.len();
 
-                        // Redraw the prompt and line
-                        write!(stdout, "$ {}", buffer)?;
-                        stdout.flush()?;
+                            // Redraw the line with the completion
+                            write!(stdout, "\r$ {}", buffer)?;
+                            stdout.flush()?;
+                        }
+                        std::cmp::Ordering::Greater => {
+                            // Show multiple completions
+                            self.display_completions(&completions)?;
+
+                            // Find the common prefix among completions
+                            if let Some(common_prefix) = self.find_common_prefix(&completions) {
+                                if !common_prefix.is_empty() {
+                                    buffer.insert_str(cursor_pos, &common_prefix);
+                                    cursor_pos += common_prefix.len();
+                                }
+                            }
+
+                            // Redraw the prompt and line
+                            write!(stdout, "$ {}", buffer)?;
+                            stdout.flush()?;
+                        }
                     }
                 }
 
@@ -897,14 +901,12 @@ impl Interpreter {
 
                 // Convert patterns to regex for matching
                 let mut matches = Vec::new();
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let file_name = entry.file_name().to_string_lossy().to_string();
+                for entry in entries.flatten() {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
 
-                        // Check if the file matches our extended glob pattern
-                        if self.matches_ext_glob(&file_name, *operator, patterns, suffix) {
-                            matches.push(file_name);
-                        }
+                    // Check if the file matches our extended glob pattern
+                    if self.matches_ext_glob(&file_name, *operator, patterns, suffix) {
+                        matches.push(file_name);
                     }
                 }
 

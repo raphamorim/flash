@@ -69,8 +69,25 @@ impl Position {
 }
 
 fn is_special_char(ch: char) -> bool {
-    matches!(ch, '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '{' | '}' | '<' | '>' | '$' | '"' | '\''
-        | '`' | '#' | '+')
+    matches!(
+        ch,
+        '=' | '|'
+            | ';'
+            | '\n'
+            | '&'
+            | '('
+            | ')'
+            | '{'
+            | '}'
+            | '<'
+            | '>'
+            | '$'
+            | '"'
+            | '\''
+            | '`'
+            | '#'
+            | '+'
+    )
 }
 
 /// Lexer that converts input text into tokens

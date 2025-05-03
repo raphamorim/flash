@@ -1272,46 +1272,33 @@ fi
                     "Script should contain at least one string literal"
                 );
 
-                // 7. Check for if-else control structure (implementation depends on how your parser handles conditionals)
-                // This is a simplified check - you may need to adapt it to your specific AST structure
-                let has_if_structure = statements.iter().any(|node| {
-                    fn check_command_name(node: &Node, name: &str) -> bool {
-                        match node {
-                            Node::Command { name: cmd_name, .. } => cmd_name == name,
-                            _ => false,
-                        }
-                    }
+                // 7. Check for if-else control structure
+                let has_if_structure = statements.iter().any(|node| match node {
+                    Node::Command { name, .. } => name == "if" || name == "fi" || name == "else",
+                    Node::List { statements, .. } => {
+                        let commands: Vec<&str> = statements
+                            .iter()
+                            .filter_map(|n| {
+                                if let Node::Command { name, .. } = n {
+                                    Some(name.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
 
-                    // This is a simple heuristic - you might need to refine this based on your actual AST structure
-                    match node {
-                        Node::Command { name, .. } => {
-                            name == "if" || name == "fi" || name == "else"
-                        }
-                        Node::List { statements, .. } => {
-                            let commands: Vec<&str> = statements
-                                .iter()
-                                .filter_map(|n| {
-                                    if let Node::Command { name, .. } = n {
-                                        Some(name.as_str())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-
-                            commands.contains(&"if")
-                                || commands.contains(&"fi")
-                                || commands.contains(&"else")
-                        }
-                        _ => false,
+                        commands.contains(&"if")
+                            || commands.contains(&"fi")
+                            || commands.contains(&"else")
                     }
+                    _ => false,
                 });
                 assert!(
                     has_if_structure,
                     "Script should contain if-else control structure"
                 );
 
-                // 8. Check for extended glob patterns if your script contains any
+                // 8. Check for extended glob patterns
                 let has_ext_glob = statements.iter().any(|node| {
                     fn contains_ext_glob(node: &Node) -> bool {
                         match node {

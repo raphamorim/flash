@@ -141,6 +141,12 @@ pub struct Formatter {
     config: FormatterConfig,
 }
 
+impl Default for Formatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Formatter {
     /// Create a new formatter with default configuration
     pub fn new() -> Self {
@@ -173,15 +179,6 @@ impl Formatter {
 
     pub fn indent(&self) -> String {
         self.config.indent_str.repeat(self.indent_level)
-    }
-
-    /// Format a redirect operator based on configuration
-    fn format_redirect_op(&self, op: &str) -> String {
-        if self.config.space_redirects {
-            format!(" {} ", op)
-        } else {
-            format!(" {}", op)
-        }
     }
 
     /// Check if node needs formatting
@@ -224,16 +221,6 @@ impl Formatter {
             // Everything else needs formatting
             _ => true,
         }
-    }
-
-    /// Format a node if needed, otherwise return the original representation
-    fn format_if_needed(&mut self, node: &Node, original: Option<&str>) -> String {
-        if let Some(orig) = original {
-            if !self.needs_formatting(node) {
-                return orig.to_string();
-            }
-        }
-        self.format(node)
     }
 
     /// Format a string input by parsing it into a Node and then formatting
@@ -694,8 +681,10 @@ mod tests {
         assert_eq!(output, input, "Simple pipeline should not be formatted");
 
         // Complex pipeline should be formatted if binary_next_line is true
-        let mut config = FormatterConfig::default();
-        config.binary_next_line = true;
+        let config = FormatterConfig {
+            binary_next_line: true,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         let input = "echo hello | grep hello | wc -l";
@@ -720,8 +709,10 @@ mod tests {
         assert_eq!(output, input, "Simple conditional should not be formatted");
 
         // Conditional with binary_next_line should be formatted
-        let mut config = FormatterConfig::default();
-        config.binary_next_line = true;
+        let config = FormatterConfig {
+            binary_next_line: true,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         let input = "[ -f file.txt ] && echo found || echo not found";
@@ -775,8 +766,10 @@ mod tests {
 
     #[test]
     fn test_never_split_option() {
-        let mut config = FormatterConfig::default();
-        config.never_split = true;
+        let config = FormatterConfig {
+            never_split: true,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         let input = "if [ -f file.txt ]; then echo found; else echo not found; fi";
@@ -836,8 +829,10 @@ echo "Done"
 
     #[test]
     fn test_disable_format_if_needed() {
-        let mut config = FormatterConfig::default();
-        config.format_if_needed = false;
+        let config = FormatterConfig {
+            format_if_needed: true,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         // Even simple command should be formatted when format_if_needed is false
@@ -853,8 +848,10 @@ echo "Done"
 
     #[test]
     fn test_space_redirects_option() {
-        let mut config = FormatterConfig::default();
-        config.space_redirects = true;
+        let config = FormatterConfig {
+            space_redirects: true,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         let input = "echo hello>file.txt";
@@ -897,8 +894,10 @@ echo "Done"
 
     #[test]
     fn test_bash_specific_features() {
-        let mut config = FormatterConfig::default();
-        config.shell_variant = ShellVariant::Bash;
+        let config = FormatterConfig {
+            shell_variant: ShellVariant::Bash,
+            ..Default::default()
+        };
         let mut formatter = Formatter::with_config(config);
 
         let input = "echo {1..5}";
