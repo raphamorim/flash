@@ -39,6 +39,29 @@ sudo cp target/release/myst /bin/
 myst
 ```
 
+#### Interpreter readline support
+
+✅ - Kill Ring: Text deleted with Ctrl+K, Ctrl+U, or Ctrl+W is saved to a kill ring, allowing it to be yanked (pasted) with Ctrl+Y.
+✅ - Ability to transpose characters with Ctrl+T.
+✅ - Incremental History Search: Pressing Ctrl+R initiates a search through command history. Pressing Ctrl+R again searches for the next occurrence of the same pattern.
+✅ - Bidirectional character and word movement keys.
+✅ - Ctrl+A: Move cursor to the beginning of the line.
+✅ - Ctrl+E: Move cursor to the end of the line.
+✅ - Ctrl+B: Move backward one character (same as left arrow).
+✅ - Ctrl+F: Move forward one character (same as right arrow).
+✅ - Ctrl+K: Cut text from cursor to end of line (kill).
+✅ - Ctrl+U: Cut text from beginning of line to cursor (kill).
+✅ - Ctrl+Y: Paste (yank) previously killed text.
+✅ - Ctrl+P: Previous history entry (same as up arrow).
+✅ - Ctrl+N: Next history entry (same as down arrow).
+✅ - Ctrl+T: Transpose (swap) characters at cursor.
+✅ - Ctrl+D: Delete character under cursor (or exit if line is empty).
+✅ - Ctrl+R: Reverse incremental search through history.
+✅ - Ctrl+W: Delete word backward.
+✅ - Ctrl+L: Clear screen and redraw prompt.
+✅ - Ctrl+C: Cancel/interrupt.
+✅ - Arrow keys for navigation and history.
+
 ## 🔌 Embed in Your Rust Project
 
 #### As an Interpreter

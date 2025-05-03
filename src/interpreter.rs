@@ -323,6 +323,9 @@ impl Interpreter {
         let mut buffer = String::new();
         let mut cursor_pos = 0;
 
+        // For storing the kill ring (for cut/paste operations)
+        let mut kill_ring = String::new();
+
         loop {
             // Switch to raw mode to read individual characters
             raw_termios.c_lflag &= !(ICANON | ECHO);
@@ -393,6 +396,380 @@ impl Interpreter {
                     }
                 }
 
+                // Ctrl-A (move to beginning of line)
+                1 => {
+                    cursor_pos = 0;
+                    write!(stdout, "\r$ ")?;
+                    stdout.flush()?;
+                }
+
+                // Ctrl-E (move to end of line)
+                5 => {
+                    cursor_pos = buffer.len();
+                    write!(stdout, "\r$ {}", buffer)?;
+                    stdout.flush()?;
+                }
+
+                // Ctrl-B (move back one character) - same as left arrow
+                2 => {
+                    if cursor_pos > 0 {
+                        cursor_pos -= 1;
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-F (move forward one character) - same as right arrow
+                6 => {
+                    if cursor_pos < buffer.len() {
+                        cursor_pos += 1;
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-K (kill from cursor to end of line)
+                11 => {
+                    if cursor_pos < buffer.len() {
+                        // Save the killed text
+                        kill_ring = buffer[cursor_pos..].to_string();
+
+                        // Remove from buffer
+                        buffer.truncate(cursor_pos);
+
+                        // Redraw
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "                    ")?; // Clear any leftovers
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-U (kill from beginning of line to cursor)
+                21 => {
+                    if cursor_pos > 0 {
+                        // Save the killed text
+                        kill_ring = buffer[..cursor_pos].to_string();
+
+                        // Remove from buffer
+                        buffer = buffer[cursor_pos..].to_string();
+                        cursor_pos = 0;
+
+                        // Redraw
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "                    ")?; // Clear any leftovers
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-Y (yank/paste previously killed text)
+                25 => {
+                    if !kill_ring.is_empty() {
+                        buffer.insert_str(cursor_pos, &kill_ring);
+                        cursor_pos += kill_ring.len();
+
+                        // Redraw
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-W (delete word backward)
+                23 => {
+                    // Delete the word before the cursor
+                    if cursor_pos > 0 {
+                        // Find the start of the current word
+                        let mut word_start = cursor_pos;
+                        let buffer_bytes = buffer.as_bytes();
+
+                        // Skip any whitespace immediately before cursor
+                        while word_start > 0 && buffer_bytes[word_start - 1].is_ascii_whitespace() {
+                            word_start -= 1;
+                        }
+
+                        // Now find the start of the word
+                        while word_start > 0 && !buffer_bytes[word_start - 1].is_ascii_whitespace()
+                        {
+                            word_start -= 1;
+                        }
+
+                        // Save to kill ring
+                        kill_ring = buffer[word_start..cursor_pos].to_string();
+
+                        // Delete from word_start to cursor_pos
+                        if word_start < cursor_pos {
+                            buffer.replace_range(word_start..cursor_pos, "");
+                            cursor_pos = word_start;
+
+                            // Redraw the line
+                            write!(stdout, "\r$ {}", buffer)?;
+                            write!(stdout, "                    ")?; // Clear any leftovers
+                            write!(stdout, "\r$ {}", buffer)?;
+                            stdout.flush()?;
+                        }
+                    }
+                }
+
+                // Ctrl-L (clear screen)
+                12 => {
+                    // Clear the screen and redraw the prompt
+                    write!(stdout, "\x1B[2J\x1B[H")?; // ANSI escape sequence to clear screen and move cursor to home
+                    write!(stdout, "$ {}", buffer)?;
+                    stdout.flush()?;
+                }
+
+                // Ctrl-P (previous history) - same as up arrow
+                16 => {
+                    if *history_index > 0 {
+                        *history_index -= 1;
+                        buffer = self.history[*history_index].clone();
+                        cursor_pos = buffer.len();
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "                    ")?; // Clear any leftovers
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-N (next history) - same as down arrow
+                14 => {
+                    if *history_index < self.history.len() {
+                        *history_index += 1;
+                        if *history_index == self.history.len() {
+                            buffer.clear();
+                            cursor_pos = 0;
+                        } else {
+                            buffer = self.history[*history_index].clone();
+                            cursor_pos = buffer.len();
+                        }
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "                    ")?; // Clear any leftovers
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-T (transpose characters)
+                20 => {
+                    if cursor_pos > 0 && cursor_pos < buffer.len() {
+                        // Get chars to swap
+                        let prev_char = buffer.remove(cursor_pos - 1);
+                        buffer.insert(cursor_pos, prev_char);
+
+                        // Redraw
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-D (delete character under cursor or exit if buffer is empty)
+                4 => {
+                    if buffer.is_empty() {
+                        println!("exit");
+                        return Ok("exit".to_string());
+                    } else if cursor_pos < buffer.len() {
+                        buffer.remove(cursor_pos);
+                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, " ")?; // Clear deleted character
+                        write!(stdout, "\r$ {}", buffer)?;
+                        // Move cursor back to the right position
+                        for _ in 0..(buffer.len() - cursor_pos) {
+                            write!(stdout, "\x1B[D")?;
+                        }
+                        stdout.flush()?;
+                    }
+                }
+
+                // Ctrl-R (reverse history search) - simplified version
+                18 => {
+                    // Store the current buffer in case search is cancelled
+                    let original_buffer = buffer.clone();
+                    let original_cursor_pos = cursor_pos;
+
+                    // Create a search buffer
+                    let mut search_term = String::new();
+                    let mut search_index = self.history.len() - 1;
+                    let mut found = false;
+
+                    // Display the search prompt
+                    write!(stdout, "\r(reverse-i-search)`': ")?;
+                    stdout.flush()?;
+
+                    // Read characters for search
+                    loop {
+                        // Read a single byte in raw mode
+                        raw_termios.c_lflag &= !(ICANON | ECHO);
+                        tcsetattr(fd, TCSANOW, raw_termios)?;
+                        let mut search_byte = [0u8; 1];
+                        stdin.read_exact(&mut search_byte)?;
+                        tcsetattr(fd, TCSANOW, original_termios)?;
+
+                        match search_byte[0] {
+                            // Enter - accept the current match
+                            b'\n' | b'\r' => {
+                                if found {
+                                    write!(stdout, "\r\n")?;
+                                    buffer = self.history[search_index].clone();
+                                    cursor_pos = buffer.len();
+                                } else {
+                                    write!(stdout, "\r$ {}", original_buffer)?;
+                                    cursor_pos = original_cursor_pos;
+                                }
+                                stdout.flush()?;
+                                break;
+                            }
+
+                            // Escape - cancel search
+                            27 => {
+                                write!(stdout, "\r$ {}", original_buffer)?;
+                                cursor_pos = original_cursor_pos;
+                                stdout.flush()?;
+                                break;
+                            }
+
+                            // Ctrl-R - search for next occurrence
+                            18 => {
+                                if found {
+                                    let mut temp_index = search_index;
+                                    let mut found_next = false;
+
+                                    // Start search from one past the current match
+                                    if temp_index > 0 {
+                                        temp_index -= 1;
+
+                                        while temp_index < self.history.len() {
+                                            if self.history[temp_index].contains(&search_term) {
+                                                search_index = temp_index;
+                                                found_next = true;
+                                                break;
+                                            }
+                                            if temp_index == 0 {
+                                                break;
+                                            }
+                                            temp_index -= 1;
+                                        }
+                                    }
+
+                                    if found_next {
+                                        write!(
+                                            stdout,
+                                            "\r(reverse-i-search)`{}': {}",
+                                            search_term, self.history[search_index]
+                                        )?;
+                                    } else {
+                                        write!(
+                                            stdout,
+                                            "\r(failed reverse-i-search)`{}': {}",
+                                            search_term, self.history[search_index]
+                                        )?;
+                                    }
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            // Backspace
+                            8 | 127 => {
+                                if !search_term.is_empty() {
+                                    search_term.pop();
+                                    found = false;
+
+                                    // Search from the end of history
+                                    search_index = self.history.len() - 1;
+
+                                    while search_index < self.history.len() {
+                                        if self.history[search_index].contains(&search_term) {
+                                            found = true;
+                                            break;
+                                        }
+                                        if search_index == 0 {
+                                            break;
+                                        }
+                                        search_index -= 1;
+                                    }
+
+                                    if found {
+                                        write!(
+                                            stdout,
+                                            "\r(reverse-i-search)`{}': {}",
+                                            search_term, self.history[search_index]
+                                        )?;
+                                    } else {
+                                        write!(
+                                            stdout,
+                                            "\r(failed reverse-i-search)`{}': ",
+                                            search_term
+                                        )?;
+                                    }
+                                    stdout.flush()?;
+                                }
+                            }
+
+                            // Regular character - add to search term
+                            _ => {
+                                let ch = search_byte[0] as char;
+                                if ch.is_ascii() && !ch.is_control() {
+                                    search_term.push(ch);
+                                    found = false;
+
+                                    // Search from the end of history
+                                    search_index = self.history.len() - 1;
+
+                                    while search_index < self.history.len() {
+                                        if self.history[search_index].contains(&search_term) {
+                                            found = true;
+                                            break;
+                                        }
+                                        if search_index == 0 {
+                                            break;
+                                        }
+                                        search_index -= 1;
+                                    }
+
+                                    if found {
+                                        write!(
+                                            stdout,
+                                            "\r(reverse-i-search)`{}': {}",
+                                            search_term, self.history[search_index]
+                                        )?;
+                                    } else {
+                                        write!(
+                                            stdout,
+                                            "\r(failed reverse-i-search)`{}': ",
+                                            search_term
+                                        )?;
+                                    }
+                                    stdout.flush()?;
+                                }
+                            }
+                        }
+                    }
+
+                    continue; // Skip the rest of the loop for this iteration
+                }
+
+                // Ctrl-C
+                3 => {
+                    println!("^C");
+                    return Ok(String::new());
+                }
+
                 // Escape sequence (arrow keys, etc.)
                 27 => {
                     // Read the next two bytes
@@ -407,6 +784,8 @@ impl Interpreter {
                                     *history_index -= 1;
                                     buffer = self.history[*history_index].clone();
                                     cursor_pos = buffer.len();
+                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "                    ")?; // Clear any leftovers
                                     write!(stdout, "\r$ {}", buffer)?;
                                     stdout.flush()?;
                                 }
@@ -456,63 +835,9 @@ impl Interpreter {
                                 }
                             }
 
+                            // Alt+Left (Home) or Alt+Right (End) could be added here
                             _ => {}
                         }
-                    }
-                }
-
-                // Ctrl-W (delete word)
-                23 => {
-                    // Delete the word before the cursor
-                    if cursor_pos > 0 {
-                        // Find the start of the current word
-                        let mut word_start = cursor_pos;
-                        let buffer_bytes = buffer.as_bytes();
-
-                        // Skip any whitespace immediately before cursor
-                        while word_start > 0 && buffer_bytes[word_start - 1].is_ascii_whitespace() {
-                            word_start -= 1;
-                        }
-
-                        // Now find the start of the word
-                        while word_start > 0 && !buffer_bytes[word_start - 1].is_ascii_whitespace()
-                        {
-                            word_start -= 1;
-                        }
-
-                        // Delete from word_start to cursor_pos
-                        if word_start < cursor_pos {
-                            buffer.replace_range(word_start..cursor_pos, "");
-                            cursor_pos = word_start;
-
-                            // Redraw the line
-                            write!(stdout, "\r$ {}", buffer)?;
-                            write!(stdout, "                    ")?; // Clear any leftovers
-                            write!(stdout, "\r$ {}", buffer)?;
-                            stdout.flush()?;
-                        }
-                    }
-                }
-
-                // Ctrl-L (clear screen)
-                12 => {
-                    // Clear the screen and redraw the prompt
-                    write!(stdout, "\x1B[2J\x1B[H")?; // ANSI escape sequence to clear screen and move cursor to home
-                    write!(stdout, "$ {}", buffer)?;
-                    stdout.flush()?;
-                }
-
-                // Ctrl-C
-                3 => {
-                    println!("^C");
-                    return Ok(String::new());
-                }
-
-                // Ctrl-D on empty line
-                4 => {
-                    if buffer.is_empty() {
-                        println!("exit");
-                        return Ok("exit".to_string());
                     }
                 }
 
