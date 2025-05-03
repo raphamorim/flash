@@ -564,10 +564,33 @@ impl Interpreter {
 
                 // Ctrl-T (transpose characters)
                 20 => {
-                    if cursor_pos > 0 && cursor_pos < buffer.len() {
+                    // Handle cursor at end of line
+                    if cursor_pos == buffer.len() && cursor_pos >= 2 {
+                        // Swap the last two characters
+                        let last_idx = buffer.len() - 1;
+                        let second_to_last_idx = buffer.len() - 2;
+
+                        // Can't use remove/insert directly with indices, so use chars
+                        let mut chars: Vec<char> = buffer.chars().collect();
+                        chars.swap(last_idx, second_to_last_idx);
+
+                        // Rebuild the buffer
+                        buffer = chars.into_iter().collect();
+
+                        // Cursor remains at the end
+
+                        // Redraw
+                        write!(stdout, "\r$ {}", buffer)?;
+                        stdout.flush()?;
+                    }
+                    // Handle cursor within the line
+                    else if cursor_pos > 0 && cursor_pos < buffer.len() {
                         // Get chars to swap
                         let prev_char = buffer.remove(cursor_pos - 1);
                         buffer.insert(cursor_pos, prev_char);
+
+                        // Advance cursor position after transposition
+                        cursor_pos += 1;
 
                         // Redraw
                         write!(stdout, "\r$ {}", buffer)?;
