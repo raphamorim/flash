@@ -53,13 +53,12 @@ impl Default for FormatterConfig {
             keep_padding: false,
             function_next_line: false,
             never_split: false,
-            format_if_needed: true, // Added default value for new option
+            format_if_needed: true,
         }
     }
 }
 
 impl FormatterConfig {
-    /// Create a new FormatterConfig from an EditorConfig-like string
     pub fn from_config_str(config: &str) -> Self {
         let mut formatter_config = FormatterConfig::default();
 
@@ -650,10 +649,7 @@ impl Formatter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parser::{Node, Redirect, RedirectKind};
-
-    // tests/formatter_tests.rs
     use crate::formatter::{Formatter, FormatterConfig, ShellVariant};
 
     #[test]
