@@ -22,6 +22,12 @@ pub struct Interpreter {
     history_file: Option<String>,
 }
 
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let mut variables = HashMap::new();
@@ -130,16 +136,14 @@ impl Interpreter {
         if let Ok(path) = env::var("PATH") {
             for path_entry in path.split(':') {
                 if let Ok(entries) = fs::read_dir(path_entry) {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            if let Some(name) = entry.file_name().to_str() {
-                                if name.starts_with(prefix) {
-                                    if let Ok(metadata) = entry.path().metadata() {
-                                        if metadata.is_file()
-                                            && metadata.permissions().mode() & 0o111 != 0
-                                        {
-                                            commands.push(name.to_string());
-                                        }
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.starts_with(prefix) {
+                                if let Ok(metadata) = entry.path().metadata() {
+                                    if metadata.is_file()
+                                        && metadata.permissions().mode() & 0o111 != 0
+                                    {
+                                        commands.push(name.to_string());
                                     }
                                 }
                             }
@@ -170,19 +174,17 @@ impl Interpreter {
 
         // Read the directory entries
         if let Ok(entries) = fs::read_dir(dir_path) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if name.starts_with(&file_prefix) {
-                            let mut completion = name[file_prefix.len()..].to_string();
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(&file_prefix) {
+                        let mut completion = name[file_prefix.len()..].to_string();
 
-                            // Add a trailing slash for directories
-                            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                                completion.push('/');
-                            }
-
-                            completions.push(completion);
+                        // Add a trailing slash for directories
+                        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                            completion.push('/');
                         }
+
+                        completions.push(completion);
                     }
                 }
             }
@@ -247,7 +249,7 @@ impl Interpreter {
 
         // Get the current terminal attributes
         let original_termios = Termios::from_fd(fd)?;
-        let mut raw_termios = original_termios.clone();
+        let mut raw_termios = original_termios;
 
         // Restore terminal on exit
         let _guard = scopeguard::guard((), |_| {
@@ -280,8 +282,7 @@ impl Interpreter {
 
             // Add to history if not empty and different from last command
             if !input.trim().is_empty()
-                && (self.history.is_empty()
-                    || self.history.last().map_or(true, |last| last != &input))
+                && (self.history.is_empty() || (self.history.last() != Some(&input)))
             {
                 self.history.push(input.clone());
                 history_index = self.history.len();
@@ -329,14 +330,14 @@ impl Interpreter {
             raw_termios.c_lflag &= !(ICANON | ECHO);
             raw_termios.c_cc[VMIN] = 1;
             raw_termios.c_cc[VTIME] = 0;
-            tcsetattr(fd, TCSANOW, &raw_termios)?;
+            tcsetattr(fd, TCSANOW, raw_termios)?;
 
             // Read a single byte
             let mut input_byte = [0u8; 1];
             stdin.read_exact(&mut input_byte)?;
 
             // Switch back to canonical mode for printing
-            tcsetattr(fd, TCSANOW, &original_termios)?;
+            tcsetattr(fd, TCSANOW, original_termios)?;
 
             match input_byte[0] {
                 // Enter
@@ -628,7 +629,7 @@ impl Interpreter {
                                 }
                                 RedirectKind::Append => {
                                     let file = fs::OpenOptions::new()
-                                        .write(true)
+                                        // .write(true)
                                         .create(true)
                                         .append(true)
                                         .open(&redirect.file)?;
@@ -708,7 +709,7 @@ impl Interpreter {
                                         if i == commands_count - 1 {
                                             // Only apply append redirect to last command
                                             let file = fs::OpenOptions::new()
-                                                .write(true)
+                                                // .write(true)
                                                 .create(true)
                                                 .append(true)
                                                 .open(&redirect.file)?;
@@ -1045,7 +1046,7 @@ impl Interpreter {
                     chars.next(); // Skip '{'
 
                     // Read until closing brace
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == '}' {
                             break;
                         }
@@ -1187,7 +1188,7 @@ mod tests {
 
     #[test]
     fn test_get_commands_completion() {
-        let mut interpreter = Interpreter::new();
+        let interpreter = Interpreter::new();
 
         // Test empty prefix (all commands)
         let commands = interpreter.get_commands("");
@@ -1248,7 +1249,7 @@ mod tests {
 
     #[test]
     fn test_generate_completions_for_commands() {
-        let mut interpreter = Interpreter::new();
+        let interpreter = Interpreter::new();
 
         // Test completion at beginning of line
         let completions = interpreter.generate_completions("", 0);
@@ -1382,7 +1383,7 @@ mod tests {
 
     #[test]
     fn test_completion_with_multiple_words() {
-        let mut interpreter = Interpreter::new();
+        let interpreter = Interpreter::new();
 
         // Test command completion after another command
         // The problem is the cursor position and parsing logic

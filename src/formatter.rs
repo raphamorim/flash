@@ -410,7 +410,7 @@ impl Formatter {
             }
             Node::Subshell { list } => {
                 let mut result = self.indent();
-                result.push_str("(");
+                result.push('(');
 
                 if !self.config.never_split {
                     result.push('\n');
@@ -649,8 +649,8 @@ impl Formatter {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{Node, Redirect, RedirectKind};
     use crate::formatter::{Formatter, FormatterConfig, ShellVariant};
+    use crate::parser::{Node, Redirect, RedirectKind};
 
     #[test]
     fn test_simple_command_not_formatted() {

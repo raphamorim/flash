@@ -14,6 +14,21 @@ Myst was created to serve two main purposes: as a learning project to better und
 
 > ⚠️ Myst is still under development. Use it with caution in production environments.
 
+Option 1:
+
+```bash
+cargo install mystsh
+```
+
+Option 2:
+
+```bash
+git clone https://github.com/raphamorim/myst.git
+cd myst && cargo install --path .
+```
+
+Option 3:
+
 ```bash
 git clone https://github.com/raphamorim/myst.git
 cd myst
