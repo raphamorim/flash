@@ -969,7 +969,7 @@ echo "Done"
         "#;
 
         let config = FormatterConfig::from_config_str(config_str);
-        assert_eq!(config.indent_str, "");
+        assert_eq!(config.indent_str, "    ");
     }
 
     #[test]
@@ -1172,7 +1172,7 @@ echo "Done"
             operators: vec!["\n".to_string()],
         };
 
-        assert_eq!(formatter.format(&node), "echo first\n\n    echo second");
+        assert_eq!(formatter.format(&node), "echo first\n\necho second");
     }
 
     #[test]
@@ -1229,7 +1229,7 @@ echo "Done"
             }),
         };
 
-        assert_eq!(formatter.format(&node), "VAR=$(    echo hello)");
+        assert_eq!(formatter.format(&node), "VAR=$(echo hello)");
     }
 
     #[test]
@@ -1262,7 +1262,7 @@ echo "Done"
             }),
         };
 
-        assert_eq!(formatter.format(&node), "(\n        echo hello\n    )");
+        assert_eq!(formatter.format(&node), "(\n    echo hello\n)");
     }
 
     #[test]
