@@ -104,7 +104,7 @@ impl Parser {
         match self.current_token.kind {
             TokenKind::Word(ref _word) => {
                 // Check for variable assignment (VAR=value)
-                if self.peek_token.kind == TokenKind::Assignment {
+                if let TokenKind::Assignment = self.peek_token.kind {
                     return Some(self.parse_assignment());
                 }
 
@@ -789,7 +789,7 @@ impl Parser {
         let mut assignments = vec![first_assignment];
 
         while let TokenKind::Word(ref _word) = self.current_token.kind {
-            if TokenKind::Assignment == self.peek_token.kind {
+            if let TokenKind::Assignment = self.peek_token.kind {
                 // Parse another assignment
                 let next_assignment = self.parse_assignment();
                 assignments.push(next_assignment);
