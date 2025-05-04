@@ -104,8 +104,8 @@ impl Parser {
         match self.current_token.kind {
             TokenKind::Word(ref _word) => {
                 // Check for variable assignment (VAR=value)
-                if let TokenKind::Assignment = self.peek_token.kind {
-                    return Some(self.parse_command_with_assignments());
+                if self.peek_token.kind == TokenKind::Assignment {
+                    return Some(self.parse_assignment());
                 }
 
                 // Regular command
@@ -121,8 +121,27 @@ impl Parser {
                 Some(Node::Comment(comment))
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
+            TokenKind::Dollar => {
+                // Handle variable reference as an argument
+                let var_ref = self.parse_variable_reference();
+                Some(Node::StringLiteral(var_ref))
+            }
             _ => None,
         }
+    }
+
+    // Parse variable reference like $VAR
+    fn parse_variable_reference(&mut self) -> String {
+        self.next_token(); // Skip '$'
+
+        let var_name = match &self.current_token.kind {
+            TokenKind::Word(word) => word.clone(),
+            _ => String::new(),
+        };
+
+        self.next_token(); // Skip the variable name
+
+        format!("${}", var_name)
     }
 
     // Parse if statement
@@ -418,7 +437,7 @@ impl Parser {
         self.next_token(); // Skip variable name
         self.next_token(); // Skip '='
 
-        // Check for quotes
+        // Check for quotes, command substitution, or plain word
         let value = match self.current_token.kind {
             TokenKind::Quote => {
                 // Handle double quoted string
@@ -438,7 +457,7 @@ impl Parser {
                     self.next_token(); // Skip closing quote
                 }
 
-                quoted_value
+                Box::new(Node::StringLiteral(quoted_value))
             }
             TokenKind::SingleQuote => {
                 // Handle single quoted string
@@ -458,28 +477,25 @@ impl Parser {
                     self.next_token(); // Skip closing quote
                 }
 
-                quoted_value
+                Box::new(Node::StringLiteral(quoted_value))
             }
             TokenKind::CmdSubst => {
-                return Node::Assignment {
-                    name,
-                    value: Box::new(self.parse_command_substitution()),
-                };
+                // Handle command substitution like $(...)
+                let cmd_subst = self.parse_command_substitution();
+                Box::new(cmd_subst)
             }
             TokenKind::Word(ref word) => {
                 let value = word.clone();
                 self.next_token(); // Skip value
-                value
+                Box::new(Node::StringLiteral(value))
             }
             _ => {
-                String::new() // Handle unexpected token type
+                // Handle unexpected token or empty value
+                Box::new(Node::StringLiteral(String::new()))
             }
         };
 
-        Node::Assignment {
-            name,
-            value: Box::new(Node::StringLiteral(value)),
-        }
+        Node::Assignment { name, value }
     }
 
     pub fn parse_command(&mut self) -> Node {
@@ -499,6 +515,11 @@ impl Parser {
                 TokenKind::Word(word) => {
                     args.push(word.clone());
                     self.next_token();
+                }
+                TokenKind::Dollar => {
+                    // Handle variable references in arguments
+                    let var_ref = self.parse_variable_reference();
+                    args.push(var_ref);
                 }
                 TokenKind::ExtGlob(_) => {
                     // Handle extended glob pattern in command arguments
@@ -529,13 +550,22 @@ impl Parser {
                     while self.current_token.kind != TokenKind::Quote
                         && self.current_token.kind != TokenKind::EOF
                     {
-                        if let TokenKind::Word(word) = &self.current_token.kind {
-                            if !quoted_string.is_empty() {
-                                quoted_string.push(' ');
+                        match &self.current_token.kind {
+                            TokenKind::Word(word) => {
+                                quoted_string.push_str(word);
                             }
-                            quoted_string.push_str(word);
+                            TokenKind::Dollar => {
+                                // Handle variable references inside quotes
+                                self.next_token(); // Skip '$'
+                                if let TokenKind::Word(var_name) = &self.current_token.kind {
+                                    quoted_string.push_str(&format!("${}", var_name));
+                                    self.next_token();
+                                }
+                            }
+                            _ => {
+                                // Handle other token types in quotes if needed
+                            }
                         }
-                        self.next_token();
                     }
 
                     if let TokenKind::Quote = self.current_token.kind {
@@ -555,9 +585,6 @@ impl Parser {
                         && self.current_token.kind != TokenKind::EOF
                     {
                         if let TokenKind::Word(word) = &self.current_token.kind {
-                            if !quoted_string.is_empty() {
-                                quoted_string.push(' ');
-                            }
                             quoted_string.push_str(word);
                         }
                         self.next_token();
@@ -630,6 +657,47 @@ impl Parser {
         let mut statements = Vec::new();
         let mut operators = Vec::new();
 
+        // Handle command substitution with a pipeline
+        if let Some(first_command) = self.parse_statement() {
+            statements.push(first_command);
+
+            // Check for pipeline operator
+            if self.current_token.kind == TokenKind::Pipe {
+                // If we find a pipe, create a Pipeline node
+                self.next_token(); // Skip '|'
+
+                if let Some(second_command) = self.parse_statement() {
+                    // Create a pipeline node with the two commands
+                    let pipeline = Node::Pipeline {
+                        commands: vec![statements.pop().unwrap(), second_command],
+                    };
+                    statements.push(pipeline);
+                }
+            }
+
+            // Check for other statement separators
+            match self.current_token.kind {
+                TokenKind::Semicolon => {
+                    operators.push(";".to_string());
+                    self.next_token();
+                }
+                TokenKind::Newline => {
+                    operators.push("\n".to_string());
+                    self.next_token();
+                }
+                TokenKind::And => {
+                    operators.push("&&".to_string());
+                    self.next_token();
+                }
+                TokenKind::Or => {
+                    operators.push("||".to_string());
+                    self.next_token();
+                }
+                _ => {}
+            }
+        }
+
+        // Parse remaining statements if any
         while self.current_token.kind != TokenKind::RParen
             && self.current_token.kind != TokenKind::EOF
         {
@@ -721,7 +789,7 @@ impl Parser {
         let mut assignments = vec![first_assignment];
 
         while let TokenKind::Word(ref _word) = self.current_token.kind {
-            if let TokenKind::Assignment = self.peek_token.kind {
+            if TokenKind::Assignment == self.peek_token.kind {
                 // Parse another assignment
                 let next_assignment = self.parse_assignment();
                 assignments.push(next_assignment);
@@ -882,6 +950,7 @@ impl Parser {
 #[cfg(test)]
 mod parser_tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     fn parse_test(input: &str) -> Node {
         let lexer = Lexer::new(input);
@@ -1135,6 +1204,69 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_simple_assignments() {
+        let input = r#"
+            #!/bin/bash
+            # Script to process logs
+            LOG_DIR="/var/log"
+            OUTPUT=$(find $LOG_DIR -name "*.log" | grep error)
+            LAST_ASSIGNMENT=1
+        "#;
+
+        let result = parse_test(input);
+        assert_eq!(
+            result,
+            Node::List {
+                statements: vec![
+                    Node::Comment("#!/bin/bash".to_string()),
+                    Node::Comment("# Script to process logs".to_string()),
+                    Node::Assignment {
+                        name: "LOG_DIR".to_string(),
+                        value: Box::new(Node::StringLiteral("/var/log".to_string())),
+                    },
+                    Node::Assignment {
+                        name: "OUTPUT".to_string(),
+                        value: Box::new(Node::CommandSubstitution {
+                            command: Box::new(Node::List {
+                                statements: vec![
+                                    Node::Command {
+                                        name: "find".to_string(),
+                                        args: vec![
+                                            "$LOG_DIR".to_string(),
+                                            "-name".to_string(),
+                                            "*.log".to_string()
+                                        ],
+                                        redirects: vec![],
+                                    },
+                                    Node::Pipeline {
+                                        commands: vec![Node::Command {
+                                            name: "grep".to_string(),
+                                            args: vec!["error".to_string()],
+                                            redirects: vec![],
+                                        },]
+                                    }
+                                ],
+                                operators: vec!["".to_string()],
+                            }),
+                        }),
+                    },
+                    Node::Assignment {
+                        name: "LAST_ASSIGNMENT".to_string(),
+                        value: Box::new(Node::StringLiteral("1".to_string())),
+                    },
+                ],
+                operators: vec![
+                    "\n".to_string(),
+                    "\n".to_string(),
+                    "\n".to_string(),
+                    "\n".to_string(),
+                    "\n".to_string()
+                ],
+            }
+        )
+    }
+
+    #[test]
     fn test_complex_script() {
         let input = r#"
 #!/bin/bash
@@ -1148,7 +1280,6 @@ else
     echo "No error logs found" > results.txt
 fi
 "#;
-        // This test just checks that parsing doesn't panic
         let result = parse_test(input);
 
         assert_eq!(format!("{:?}", result), "a");
