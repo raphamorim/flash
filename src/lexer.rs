@@ -22,8 +22,6 @@ pub enum TokenKind {
     Backtick,      // `
     Comment,       // #
     CmdSubst,      // $(
-    Increment,     // ++
-    Decrement,     // --
     ExtGlob(char), // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
@@ -86,7 +84,6 @@ fn is_special_char(ch: char) -> bool {
             | '\''
             | '`'
             | '#'
-            | '+'
     )
 }
 
@@ -145,18 +142,6 @@ impl Lexer {
         let current_position = Position::new(self.line, self.column);
 
         let token = match self.ch {
-            '+' => {
-                if self.peek_char() == '+' {
-                    self.read_char();
-                    Token {
-                        kind: TokenKind::Increment,
-                        value: "++".to_string(),
-                        position: current_position,
-                    }
-                } else {
-                    self.read_word()
-                }
-            }
             '=' => Token {
                 kind: TokenKind::Assignment,
                 value: "=".to_string(),
@@ -1497,8 +1482,7 @@ mod lexer_tests {
             TokenKind::Less,
             TokenKind::Word("5".to_string()),
             TokenKind::Semicolon,
-            TokenKind::Word("i".to_string()),
-            TokenKind::Increment,
+            TokenKind::Word("i++".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
             TokenKind::Semicolon,
@@ -1527,8 +1511,7 @@ mod lexer_tests {
             TokenKind::Great,
             TokenKind::Word("0".to_string()),
             TokenKind::Semicolon,
-            TokenKind::Word("i".to_string()),
-            TokenKind::Decrement,
+            TokenKind::Word("i--".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
             TokenKind::Semicolon,
@@ -1563,8 +1546,7 @@ mod lexer_tests {
             TokenKind::Assignment,
             TokenKind::CmdSubst,
             TokenKind::LParen,
-            TokenKind::Word("i".to_string()),
-            TokenKind::Word("+1".to_string()),
+            TokenKind::Word("i+1".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
             TokenKind::Semicolon,
