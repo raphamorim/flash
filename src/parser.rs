@@ -104,7 +104,7 @@ impl Parser {
         match self.current_token.kind {
             TokenKind::Word(ref _word) => {
                 // Check for variable assignment (VAR=value)
-                if let TokenKind::Assignment = self.peek_token.kind {
+                if self.peek_token.kind == TokenKind::Assignment {
                     return Some(self.parse_assignment());
                 }
 
@@ -121,27 +121,8 @@ impl Parser {
                 Some(Node::Comment(comment))
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
-            TokenKind::Dollar => {
-                // Handle variable reference as an argument
-                let var_ref = self.parse_variable_reference();
-                Some(Node::StringLiteral(var_ref))
-            }
             _ => None,
         }
-    }
-
-    // Parse variable reference like $VAR
-    fn parse_variable_reference(&mut self) -> String {
-        self.next_token(); // Skip '$'
-
-        let var_name = match &self.current_token.kind {
-            TokenKind::Word(word) => word.clone(),
-            _ => String::new(),
-        };
-
-        self.next_token(); // Skip the variable name
-
-        format!("${}", var_name)
     }
 
     // Parse if statement
@@ -495,160 +476,147 @@ impl Parser {
             }
         };
 
-        Node::Assignment { name, value }
+        Node::Assignment {
+            name,
+            value,
+        }
     }
 
-    pub fn parse_command(&mut self) -> Node {
-        let name = match &self.current_token.kind {
-            TokenKind::Word(word) => word.clone(),
-            _ => String::new(),
-        };
+pub fn parse_command(&mut self) -> Node {
+    let name = match &self.current_token.kind {
+        TokenKind::Word(word) => word.clone(),
+        _ => String::new(),
+    };
 
-        self.next_token();
+    self.next_token();
 
-        let mut args = Vec::new();
-        let mut redirects = Vec::new();
+    let mut args = Vec::new();
+    let mut redirects = Vec::new();
 
-        // Loop to collect arguments and handle quotes
-        loop {
-            match &self.current_token.kind {
-                TokenKind::Word(word) => {
-                    args.push(word.clone());
+    // Loop to collect arguments and handle quotes
+    loop {
+        match &self.current_token.kind {
+            TokenKind::Word(word) => {
+                // Check if this word is a variable reference (starts with $)
+                // and keep it as a single token
+                args.push(word.clone());
+                self.next_token();
+            }
+            TokenKind::ExtGlob(_) => {
+                // Handle extended glob pattern in command arguments
+                let extglob = self.parse_extglob();
+
+                // Convert the ExtGlobPattern to a string representation
+                let pattern_str = match &extglob {
+                    Node::ExtGlobPattern {
+                        operator,
+                        patterns,
+                        suffix,
+                    } => {
+                        let patterns_joined = patterns.join("|");
+                        format!("{}({}){}", operator, patterns_joined, suffix)
+                    }
+                    _ => String::new(),
+                };
+
+                args.push(pattern_str);
+            }
+            TokenKind::Quote => {
+                // Start of a double quoted string
+                self.next_token(); // Skip double quote symbol
+
+                let mut quoted_string = String::new();
+
+                // Collect all tokens until the closing quote
+                while self.current_token.kind != TokenKind::Quote
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    if let TokenKind::Word(word) = &self.current_token.kind {
+                        quoted_string.push_str(word);
+                    }
                     self.next_token();
                 }
-                TokenKind::Dollar => {
-                    // Handle variable references in arguments
-                    let var_ref = self.parse_variable_reference();
-                    args.push(var_ref);
+
+                if let TokenKind::Quote = self.current_token.kind {
+                    self.next_token(); // Skip closing quote
                 }
-                TokenKind::ExtGlob(_) => {
-                    // Handle extended glob pattern in command arguments
-                    let extglob = self.parse_extglob();
 
-                    // Convert the ExtGlobPattern to a string representation
-                    let pattern_str = match &extglob {
-                        Node::ExtGlobPattern {
-                            operator,
-                            patterns,
-                            suffix,
-                        } => {
-                            let patterns_joined = patterns.join("|");
-                            format!("{}({}){}", operator, patterns_joined, suffix)
-                        }
-                        _ => String::new(),
-                    };
-
-                    args.push(pattern_str);
-                }
-                TokenKind::Quote => {
-                    // Start of a double quoted string
-                    self.next_token(); // Skip double quote symbol
-
-                    let mut quoted_string = String::new();
-
-                    // Collect all tokens until the closing quote
-                    while self.current_token.kind != TokenKind::Quote
-                        && self.current_token.kind != TokenKind::EOF
-                    {
-                        match &self.current_token.kind {
-                            TokenKind::Word(word) => {
-                                quoted_string.push_str(word);
-                            }
-                            TokenKind::Dollar => {
-                                // Handle variable references inside quotes
-                                self.next_token(); // Skip '$'
-                                if let TokenKind::Word(var_name) = &self.current_token.kind {
-                                    quoted_string.push_str(&format!("${}", var_name));
-                                    self.next_token();
-                                }
-                            }
-                            _ => {
-                                // Handle other token types in quotes if needed
-                            }
-                        }
-                    }
-
-                    if let TokenKind::Quote = self.current_token.kind {
-                        self.next_token(); // Skip closing quote
-                    }
-
-                    args.push(quoted_string);
-                }
-                TokenKind::SingleQuote => {
-                    // Start of a single quoted string
-                    self.next_token(); // Skip single quote symbol
-
-                    let mut quoted_string = String::new();
-
-                    // Collect all tokens until the closing single quote
-                    while self.current_token.kind != TokenKind::SingleQuote
-                        && self.current_token.kind != TokenKind::EOF
-                    {
-                        if let TokenKind::Word(word) = &self.current_token.kind {
-                            quoted_string.push_str(word);
-                        }
-                        self.next_token();
-                    }
-
-                    if let TokenKind::SingleQuote = self.current_token.kind {
-                        self.next_token(); // Skip closing single quote
-                    }
-
-                    args.push(quoted_string);
-                }
-                TokenKind::Less | TokenKind::Great | TokenKind::DGreat => {
-                    let redirect = self.parse_redirect();
-                    redirects.push(redirect);
-                }
-                _ => break, // Exit when we're not on a word, quote, or redirect token
+                args.push(quoted_string);
             }
-        }
+            TokenKind::SingleQuote => {
+                // Start of a single quoted string
+                self.next_token(); // Skip single quote symbol
 
-        // Check for pipeline
-        if self.current_token.kind == TokenKind::Pipe {
-            let mut commands = vec![Node::Command {
-                name,
-                args,
-                redirects,
-            }];
+                let mut quoted_string = String::new();
 
-            // Parse the rest of the pipeline
-            while self.current_token.kind == TokenKind::Pipe {
-                self.next_token(); // Skip the '|'
-
-                match self.parse_statement() {
-                    Some(Node::Command {
-                        name,
-                        args,
-                        redirects,
-                    }) => {
-                        commands.push(Node::Command {
-                            name,
-                            args,
-                            redirects,
-                        });
+                // Collect all tokens until the closing single quote
+                while self.current_token.kind != TokenKind::SingleQuote
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    if let TokenKind::Word(word) = &self.current_token.kind {
+                        quoted_string.push_str(word);
                     }
-                    Some(Node::Pipeline {
-                        commands: more_commands,
-                    }) => {
-                        commands.extend(more_commands);
-                    }
-                    Some(other_node) => {
-                        commands.push(other_node);
-                    }
-                    None => break,
+                    self.next_token();
                 }
-            }
 
-            Node::Pipeline { commands }
-        } else {
-            Node::Command {
-                name,
-                args,
-                redirects,
+                if let TokenKind::SingleQuote = self.current_token.kind {
+                    self.next_token(); // Skip closing single quote
+                }
+
+                args.push(quoted_string);
             }
+            TokenKind::Less | TokenKind::Great | TokenKind::DGreat => {
+                let redirect = self.parse_redirect();
+                redirects.push(redirect);
+            }
+            TokenKind::Dollar => {
+                // Handle variable references explicitly (like $VAR)
+                let mut var_ref = "$".to_string();
+                self.next_token(); // Skip $
+                
+                if let TokenKind::Word(word) = &self.current_token.kind {
+                    var_ref.push_str(word);
+                    self.next_token(); // Skip variable name
+                }
+                
+                args.push(var_ref);
+            }
+            _ => break, // Exit when we're not on a word, quote, or redirect token
         }
     }
+
+    // Check for pipeline
+    if self.current_token.kind == TokenKind::Pipe {
+        self.next_token(); // Skip the '|'
+        
+        // Parse the next command in the pipeline
+        let next_command = self.parse_command();
+        
+        let mut commands = vec![Node::Command {
+            name,
+            args,
+            redirects,
+        }];
+        
+        // Add the next command to the pipeline
+        match next_command {
+            Node::Pipeline { commands: more_commands } => {
+                commands.extend(more_commands);
+            }
+            _ => {
+                commands.push(next_command);
+            }
+        }
+
+        Node::Pipeline { commands }
+    } else {
+        Node::Command {
+            name,
+            args,
+            redirects,
+        }
+    }
+}
 
     pub fn parse_command_substitution(&mut self) -> Node {
         self.next_token(); // Skip '$('
@@ -657,47 +625,6 @@ impl Parser {
         let mut statements = Vec::new();
         let mut operators = Vec::new();
 
-        // Handle command substitution with a pipeline
-        if let Some(first_command) = self.parse_statement() {
-            statements.push(first_command);
-
-            // Check for pipeline operator
-            if self.current_token.kind == TokenKind::Pipe {
-                // If we find a pipe, create a Pipeline node
-                self.next_token(); // Skip '|'
-
-                if let Some(second_command) = self.parse_statement() {
-                    // Create a pipeline node with the two commands
-                    let pipeline = Node::Pipeline {
-                        commands: vec![statements.pop().unwrap(), second_command],
-                    };
-                    statements.push(pipeline);
-                }
-            }
-
-            // Check for other statement separators
-            match self.current_token.kind {
-                TokenKind::Semicolon => {
-                    operators.push(";".to_string());
-                    self.next_token();
-                }
-                TokenKind::Newline => {
-                    operators.push("\n".to_string());
-                    self.next_token();
-                }
-                TokenKind::And => {
-                    operators.push("&&".to_string());
-                    self.next_token();
-                }
-                TokenKind::Or => {
-                    operators.push("||".to_string());
-                    self.next_token();
-                }
-                _ => {}
-            }
-        }
-
-        // Parse remaining statements if any
         while self.current_token.kind != TokenKind::RParen
             && self.current_token.kind != TokenKind::EOF
         {
@@ -1214,56 +1141,40 @@ mod parser_tests {
         "#;
 
         let result = parse_test(input);
-        assert_eq!(
-            result,
-            Node::List {
-                statements: vec![
-                    Node::Comment("#!/bin/bash".to_string()),
-                    Node::Comment("# Script to process logs".to_string()),
-                    Node::Assignment {
-                        name: "LOG_DIR".to_string(),
-                        value: Box::new(Node::StringLiteral("/var/log".to_string())),
-                    },
-                    Node::Assignment {
-                        name: "OUTPUT".to_string(),
-                        value: Box::new(Node::CommandSubstitution {
-                            command: Box::new(Node::List {
-                                statements: vec![
-                                    Node::Command {
-                                        name: "find".to_string(),
-                                        args: vec![
-                                            "$LOG_DIR".to_string(),
-                                            "-name".to_string(),
-                                            "*.log".to_string()
-                                        ],
-                                        redirects: vec![],
-                                    },
-                                    Node::Pipeline {
-                                        commands: vec![Node::Command {
-                                            name: "grep".to_string(),
-                                            args: vec!["error".to_string()],
-                                            redirects: vec![],
-                                        },]
-                                    }
-                                ],
-                                operators: vec!["".to_string()],
-                            }),
+        assert_eq!(result, Node::List {
+            statements: vec![
+                Node::Comment("#!/bin/bash".to_string()),
+                Node::Comment("# Script to process logs".to_string()),
+                Node::Assignment {
+                    name: "LOG_DIR".to_string(),
+                    value: Box::new(Node::StringLiteral("/var/log".to_string())),
+                },
+                Node::Assignment {
+                    name: "OUTPUT".to_string(),
+                    value: Box::new(Node::CommandSubstitution {
+                        command: Box::new(Node::Pipeline {
+                            commands: vec![
+                                Node::Command {
+                                    name: "find".to_string(),
+                                    args: vec!["$LOG_DIR".to_string(), "-name".to_string(), "*.log".to_string()],
+                                    redirects: vec![],
+                                },
+                                Node::Command {
+                                    name: "grep".to_string(),
+                                    args: vec!["error".to_string()],
+                                    redirects: vec![],
+                                },
+                            ],
                         }),
-                    },
-                    Node::Assignment {
-                        name: "LAST_ASSIGNMENT".to_string(),
-                        value: Box::new(Node::StringLiteral("1".to_string())),
-                    },
-                ],
-                operators: vec![
-                    "\n".to_string(),
-                    "\n".to_string(),
-                    "\n".to_string(),
-                    "\n".to_string(),
-                    "\n".to_string()
-                ],
-            }
-        )
+                    }),
+                },
+                Node::Assignment {
+                    name: "LAST_ASSIGNMENT".to_string(),
+                    value: Box::new(Node::StringLiteral("1".to_string())),
+                },
+            ],
+            operators: vec!["\n".to_string(), "\n".to_string(), "\n".to_string(), "\n".to_string(), "\n".to_string()],
+        })
     }
 
     #[test]
