@@ -630,6 +630,26 @@ impl Formatter {
 
                 result
             }
+            Node::Function { name, list, has_keyword } => {
+                let mut result = self.indent();
+                if *has_keyword {
+                    result.push_str("function ");
+                }
+                result.push_str(name);
+                result.push_str("() {");
+                result.push('\n');
+
+                self.indent_level += 1;
+                result.push_str(&self.format(list));
+                self.indent_level -= 1;
+
+                result.push('\n');
+                result.push_str(&self.indent());
+
+                result.push('}');
+
+                result
+            }
         }
     }
 }

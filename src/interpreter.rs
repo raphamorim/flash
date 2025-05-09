@@ -1306,7 +1306,7 @@ impl Interpreter {
 
                 Ok(0)
             }
-            &Node::IfStatement { .. } | &Node::ElifBranch { .. } | &Node::ElseBranch { .. } => {
+            &Node::IfStatement { .. } | &Node::ElifBranch { .. } | &Node::ElseBranch { .. } | &Node::Function { .. } => {
                 todo!()
             }
         }

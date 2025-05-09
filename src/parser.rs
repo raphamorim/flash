@@ -51,6 +51,11 @@ pub enum Node {
     ElseBranch {
         consequence: Box<Node>,
     },
+    Function {
+        name: String,
+        list: Box<Node>,
+        has_keyword: bool,
+    },
 }
 
 /// Redirection types
@@ -107,6 +112,10 @@ impl Parser {
                 if self.peek_token.kind == TokenKind::Assignment {
                     return Some(self.parse_assignment());
                 }
+                // Check for LParen (function without keyword)
+                if self.peek_token.kind == TokenKind::LParen {
+                    return Some(self.parse_function(false));
+                }
 
                 // Regular command
                 Some(self.parse_command())
@@ -121,6 +130,10 @@ impl Parser {
                 Some(Node::Comment(comment))
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
+            TokenKind::Function => {
+                self.next_token();
+                Some(self.parse_function(true))
+            }
             _ => None,
         }
     }
@@ -218,6 +231,27 @@ impl Parser {
 
         Node::ElseBranch {
             consequence: Box::new(consequence),
+        }
+    }
+
+    fn parse_function(&mut self, has_keyword: bool) -> Node {
+        let name = self.current_token.value.clone();
+
+        if self.peek_token.kind == TokenKind::LParen {
+            self.next_token(); // Skip LParen
+            self.next_token(); // Skip RParen
+        }
+
+        self.next_token(); // Skip LBrace
+
+        let list = self.parse_until_token_kind(TokenKind::RBrace);
+
+        self.next_token(); // Skip RBrace
+
+        Node::Function {
+            name,
+            list: Box::new(list),
+            has_keyword,
         }
     }
 
