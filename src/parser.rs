@@ -1423,9 +1423,40 @@ function hello() {
 hello World
 "#;
 
-        // This would require additional parsing logic not present in the current code
-        // Just verify it doesn't panic
-        let _result = parse_test(input);
+        let result = parse_test(input);
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 2);
+
+                match &statements[0] {
+                    Node::Function {
+                        name,
+                        list,
+                        has_keyword,
+                    } => {
+                        assert_eq!(name, "hello");
+                        assert_eq!(*has_keyword, true);
+
+                        match &**list {
+                            Node::List {
+                                statements,
+                                operators,
+                            } => {
+                                assert_eq!(statements.len(), 1);
+                                assert_eq!(operators.len(), 0);
+                            }
+                            _ => panic!("Expected List node inside function"),
+                        }
+                    }
+                    _ => panic!("Expected Function node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
     }
 
     #[test]
