@@ -95,6 +95,7 @@ pub struct Lexer {
     ch: char,
     line: usize,
     column: usize,
+    in_quotes: Option<char>,
 }
 
 impl Lexer {
@@ -106,6 +107,7 @@ impl Lexer {
             ch: '\0',
             line: 1,
             column: 0,
+            in_quotes: None,
         };
         lexer.read_char();
         lexer
@@ -158,9 +160,49 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Token {
-        self.skip_whitespace();
+        if self.in_quotes.is_none() {
+            self.skip_whitespace();
+        }
 
         let current_position = Position::new(self.line, self.column);
+
+        // Check for quote start/end
+        if (self.ch == '"' || self.ch == '\'') && self.in_quotes.is_none() {
+            // Starting a quoted section
+            let quote_type = self.ch;
+            let token = Token {
+                kind: if quote_type == '"' {
+                    TokenKind::Quote
+                } else {
+                    TokenKind::SingleQuote
+                },
+                value: quote_type.to_string(),
+                position: current_position,
+            };
+
+            self.in_quotes = Some(quote_type); // Set the in_quotes state
+            self.read_char();
+            return token;
+        } else if self.in_quotes.is_some() && self.ch == self.in_quotes.unwrap() {
+            // Ending a quoted section
+            let quote_type = self.ch;
+            let token = Token {
+                kind: if quote_type == '"' {
+                    TokenKind::Quote
+                } else {
+                    TokenKind::SingleQuote
+                },
+                value: quote_type.to_string(),
+                position: current_position,
+            };
+
+            self.in_quotes = None; // Clear the in_quotes state
+            self.read_char();
+            return token;
+        } else if self.in_quotes.is_some() {
+            // We're inside quotes, collect everything until the closing quote as a single word
+            return self.read_quoted_content();
+        }
 
         let token = match self.ch {
             '=' => Token {
@@ -859,6 +901,34 @@ impl Lexer {
         }
     }
 
+    fn read_quoted_content(&mut self) -> Token {
+        let position = Position::new(self.line, self.column);
+        let mut content = String::new();
+        let quote_char = self.in_quotes.unwrap();
+
+        // Keep reading until we hit the closing quote or EOF
+        while self.ch != quote_char && self.ch != '\0' {
+            // Handle escaped quotes
+            if self.ch == '\\' && self.peek_char() == quote_char {
+                self.read_char(); // Skip the backslash
+            }
+
+            if self.ch == '\n' {
+                self.line += 1;
+                self.column = 0;
+            }
+
+            content.push(self.ch);
+            self.read_char();
+        }
+
+        Token {
+            kind: TokenKind::Word(content.clone()),
+            value: content,
+            position,
+        }
+    }
+
     fn skip_whitespace(&mut self) {
         while self.ch.is_whitespace() && self.ch != '\n' {
             self.read_char();
@@ -1129,16 +1199,14 @@ mod lexer_tests {
 
     #[test]
     fn test_quoted_strings() {
-        let input = r#"echo "hello world" 'single quoted'"#;
+        let input = r#"echo "hello world" 'rio de janeiro'"#;
         let expected = vec![
             TokenKind::Word("echo".to_string()),
             TokenKind::Quote,
-            TokenKind::Word("hello".to_string()),
-            TokenKind::Word("world".to_string()),
+            TokenKind::Word("hello world".to_string()),
             TokenKind::Quote,
             TokenKind::SingleQuote,
-            TokenKind::Word("single".to_string()),
-            TokenKind::Word("quoted".to_string()),
+            TokenKind::Word("rio de janeiro".to_string()),
             TokenKind::SingleQuote,
         ];
         test_tokens(input, expected);
@@ -1530,8 +1598,7 @@ mod lexer_tests {
             TokenKind::Newline,
             TokenKind::Word("echo".to_string()),
             TokenKind::Quote,
-            TokenKind::Word("Hello,".to_string()),
-            TokenKind::Word("world!".to_string()),
+            TokenKind::Word("Hello, world!".to_string()),
             TokenKind::Quote,
             TokenKind::Newline,
             TokenKind::Return,
