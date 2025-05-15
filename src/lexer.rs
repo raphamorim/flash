@@ -90,7 +90,7 @@ fn is_special_char(ch: char) -> bool {
 /// Lexer that converts input text into tokens
 pub struct Lexer {
     input: Vec<char>,
-    position: usize,
+    pub position: usize,
     read_position: usize,
     ch: char,
     line: usize,
@@ -122,7 +122,7 @@ impl Lexer {
         self.column += 1;
     }
 
-    fn peek_char(&self) -> char {
+    pub fn peek_char(&self) -> char {
         if self.read_position >= self.input.len() {
             '\0'
         } else {
@@ -134,6 +134,27 @@ impl Lexer {
     fn is_word_boundary(&self) -> bool {
         let peek = self.peek_char();
         peek.is_whitespace() || is_special_char(peek) || peek == '\0'
+    }
+
+    pub fn peek_next_token(&mut self) -> Token {
+        // Save the current state
+        let saved_position = self.position;
+        let saved_read_position = self.read_position;
+        let saved_ch = self.ch;
+        let saved_line = self.line;
+        let saved_column = self.column;
+
+        // Get the next token
+        let token = self.next_token();
+
+        // Restore the saved state
+        self.position = saved_position;
+        self.read_position = saved_read_position;
+        self.ch = saved_ch;
+        self.line = saved_line;
+        self.column = saved_column;
+
+        token
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -883,6 +904,188 @@ mod lexer_tests {
             "Expected EOF but got {:?}",
             final_token.kind
         );
+    }
+
+    #[test]
+    fn test_peek_without_advancing() {
+        let input = "if then";
+        let mut lexer = Lexer::new(input);
+
+        // Peek next token (should be 'if')
+        let peeked_token = lexer.peek_next_token();
+        assert_eq!(peeked_token.kind, TokenKind::If);
+        assert_eq!(peeked_token.value, "if");
+
+        // Current token should still be 'if' after peeking
+        let current_token = lexer.next_token();
+        assert_eq!(current_token.kind, TokenKind::If);
+        assert_eq!(current_token.value, "if");
+
+        // Next token should be 'then'
+        let next_token = lexer.next_token();
+        assert_eq!(next_token.kind, TokenKind::Then);
+        assert_eq!(next_token.value, "then");
+    }
+
+    #[test]
+    fn test_multiple_peeks() {
+        let input = "for i in 1 2 3";
+        let mut lexer = Lexer::new(input);
+
+        // First peek should be 'for'
+        let first_peek = lexer.peek_next_token();
+        assert_eq!(first_peek.kind, TokenKind::For);
+
+        // Second peek should still be 'for' since we haven't advanced
+        let second_peek = lexer.peek_next_token();
+        assert_eq!(second_peek.kind, TokenKind::For);
+
+        // Now consume the 'for' token
+        let token = lexer.next_token();
+        assert_eq!(token.kind, TokenKind::For);
+
+        // Peek should now be 'i'
+        let third_peek = lexer.peek_next_token();
+        assert_eq!(third_peek.kind, TokenKind::Word("i".to_string()));
+    }
+
+    #[test]
+    fn test_peek_at_end() {
+        let input = "ls";
+        let mut lexer = Lexer::new(input);
+
+        // Consume the only token
+        let token = lexer.next_token();
+        assert_eq!(token.kind, TokenKind::Word("ls".to_string()));
+
+        // Peek should now return EOF
+        let peeked_token = lexer.peek_next_token();
+        assert_eq!(peeked_token.kind, TokenKind::EOF);
+
+        // Next token should also be EOF
+        let eof_token = lexer.next_token();
+        assert_eq!(eof_token.kind, TokenKind::EOF);
+    }
+
+    #[test]
+    fn test_peek_special_tokens() {
+        let input = "if [ $a = 5 ]; then echo success; fi";
+        let mut lexer = Lexer::new(input);
+
+        // Consume 'if'
+        let if_token = lexer.next_token();
+        assert_eq!(if_token.kind, TokenKind::If);
+
+        // Peek should be '['
+        let peek_token = lexer.peek_next_token();
+        assert_eq!(peek_token.kind, TokenKind::Word("[".to_string()));
+
+        // Lexer position should still be at the same point
+        let bracket_token = lexer.next_token();
+        assert_eq!(bracket_token.kind, TokenKind::Word("[".to_string()));
+
+        // Let's consume a few more tokens
+        lexer.next_token(); // $
+        lexer.next_token(); // a
+
+        // Peek should now be '='
+        let eq_peek = lexer.peek_next_token();
+        assert_eq!(eq_peek.kind, TokenKind::Assignment);
+        assert_eq!(eq_peek.value, "=");
+
+        // And verify we're still at the same position
+        let eq_token = lexer.next_token();
+        assert_eq!(eq_token.kind, TokenKind::Assignment);
+    }
+
+    #[test]
+    fn test_peek_with_complex_tokens() {
+        let input = "ls -l || echo 'failed'";
+        let mut lexer = Lexer::new(input);
+
+        // Consume 'ls' and '-l'
+        lexer.next_token(); // ls
+        lexer.next_token(); // -l
+
+        // Peek should now be '||'
+        let or_peek = lexer.peek_next_token();
+        assert_eq!(or_peek.kind, TokenKind::Or);
+        assert_eq!(or_peek.value, "||");
+
+        // Verify we still get '||' when advancing
+        let or_token = lexer.next_token();
+        assert_eq!(or_token.kind, TokenKind::Or);
+
+        // Peek should now be 'echo'
+        let echo_peek = lexer.peek_next_token();
+        assert_eq!(echo_peek.kind, TokenKind::Word("echo".to_string()));
+    }
+
+    #[test]
+    fn test_peek_with_newlines() {
+        let input = "echo hello\necho world";
+        let mut lexer = Lexer::new(input);
+
+        // Consume 'echo' and 'hello'
+        lexer.next_token(); // echo
+        lexer.next_token(); // hello
+
+        // Peek should be newline
+        let nl_peek = lexer.peek_next_token();
+        assert_eq!(nl_peek.kind, TokenKind::Newline);
+
+        // Advance past newline
+        let nl_token = lexer.next_token();
+        assert_eq!(nl_token.kind, TokenKind::Newline);
+
+        // Peek should now be the second 'echo'
+        let echo2_peek = lexer.peek_next_token();
+        assert_eq!(echo2_peek.kind, TokenKind::Word("echo".to_string()));
+    }
+
+    #[test]
+    fn test_peek_with_comments() {
+        let input = "# This is a comment\necho hello";
+        let mut lexer = Lexer::new(input);
+
+        // Peek should be a comment
+        let comment_peek = lexer.peek_next_token();
+        assert_eq!(comment_peek.kind, TokenKind::Comment);
+
+        // Advance past comment
+        let comment_token = lexer.next_token();
+        assert_eq!(comment_token.kind, TokenKind::Comment);
+
+        // Peek should now be newline
+        let nl_peek = lexer.peek_next_token();
+        assert_eq!(nl_peek.kind, TokenKind::Newline);
+    }
+
+    #[test]
+    fn test_state_preservation() {
+        let input = "if [ $? -eq 0 ]; then echo success; fi";
+        let mut lexer = Lexer::new(input);
+
+        // Record initial position data
+        let initial_position = lexer.position;
+        let initial_read_position = lexer.read_position;
+        let initial_line = lexer.line;
+        let initial_column = lexer.column;
+
+        // Peek next token to ensure state is preserved
+        lexer.peek_next_token();
+
+        // Verify that the lexer's state hasn't changed
+        assert_eq!(lexer.position, initial_position);
+        assert_eq!(lexer.read_position, initial_read_position);
+        assert_eq!(lexer.line, initial_line);
+        assert_eq!(lexer.column, initial_column);
+
+        // Now advance the lexer
+        lexer.next_token();
+
+        // Verify that the state has now changed
+        assert_ne!(lexer.position, initial_position);
     }
 
     #[test]
