@@ -1210,65 +1210,6 @@ impl Interpreter {
                 self.evaluate(list)
             }
             Node::Comment(_) => Ok(0),
-            Node::VariableAssignmentCommand {
-                assignments,
-                command,
-            } => {
-                // Save original variable values to restore later
-                let mut original_values = HashMap::new();
-
-                // Apply all variable assignments temporarily
-                for assignment in assignments {
-                    if let Node::Assignment { name, value } = assignment {
-                        // Store the original value if it exists
-                        if let Some(orig_value) = self.variables.get(name) {
-                            original_values.insert(name.clone(), orig_value.clone());
-                        } else {
-                            // Mark that the variable didn't exist before
-                            original_values.insert(name.clone(), String::new());
-                        }
-
-                        // Apply the assignment
-                        match &**value {
-                            Node::StringLiteral(string_value) => {
-                                let expanded_value = self.expand_variables(string_value);
-                                self.variables.insert(name.clone(), expanded_value);
-                            }
-                            Node::CommandSubstitution { command: cmd } => {
-                                let output = self.capture_command_output(cmd)?;
-                                self.variables.insert(name.clone(), output);
-                            }
-                            _ => {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::Other,
-                                    "Unsupported value type for assignment",
-                                ));
-                            }
-                        }
-                    } else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "Expected Assignment node in VariableAssignmentCommand",
-                        ));
-                    }
-                }
-
-                // Execute the command with the temporary variable assignments
-                let result = self.evaluate(command);
-
-                // Restore original variable values
-                for (name, value) in original_values {
-                    if value.is_empty() && !self.variables.contains_key(&name) {
-                        // The variable didn't exist before, remove it
-                        self.variables.remove(&name);
-                    } else {
-                        // Restore the original value
-                        self.variables.insert(name, value);
-                    }
-                }
-
-                result
-            }
             Node::ExtGlobPattern {
                 operator,
                 patterns,
@@ -1306,7 +1247,7 @@ impl Interpreter {
 
                 Ok(0)
             }
-            &Node::IfStatement { .. } | &Node::ElifBranch { .. } | &Node::ElseBranch { .. } => {
+            _ => {
                 todo!()
             }
         }
@@ -1502,45 +1443,6 @@ mod tests {
         let result = interpreter.execute("X=test").unwrap();
         assert_eq!(result, 0);
         assert_eq!(interpreter.variables.get("X"), Some(&"test".to_string()));
-    }
-
-    #[test]
-    fn test_variable_assignment_command() {
-        // Create an interpreter
-        let mut interpreter = Interpreter::new();
-
-        // Set up a test variable
-        interpreter
-            .variables
-            .insert("TESTVAR".to_string(), "original".to_string());
-
-        // Create a temporary variable assignment with command
-        let name_node = Box::new(Node::StringLiteral("temporary".to_string()));
-        let assignment = Node::Assignment {
-            name: "TESTVAR".to_string(),
-            value: name_node,
-        };
-
-        let echo_command = Box::new(Node::Command {
-            name: "echo".to_string(),
-            args: vec!["$TESTVAR".to_string()],
-            redirects: vec![],
-        });
-
-        let var_cmd = Node::VariableAssignmentCommand {
-            assignments: vec![assignment],
-            command: echo_command,
-        };
-
-        // Execute the command which should print "temporary"
-        let exit_code = interpreter.evaluate(&var_cmd).unwrap();
-        assert_eq!(exit_code, 0);
-
-        // Verify the original value is restored
-        assert_eq!(
-            interpreter.variables.get("TESTVAR"),
-            Some(&"original".to_string())
-        );
     }
 
     #[test]

@@ -428,33 +428,6 @@ impl Formatter {
                 result.push_str(comment);
                 result
             }
-            Node::VariableAssignmentCommand {
-                assignments,
-                command,
-            } => {
-                let mut result = self.indent();
-
-                // Format each assignment
-                for (i, assignment) in assignments.iter().enumerate() {
-                    if i > 0 {
-                        result.push(' ');
-                    }
-
-                    // Remove indent from each assignment as they're on the same line
-                    let assignment_str = self.format(assignment);
-                    result.push_str(assignment_str.trim_start());
-                }
-
-                // Add space before command
-                result.push(' ');
-
-                // Format the command with its existing indent level
-                // Remove indent from the command as it's on the same line as assignments
-                let command_str = self.format(command);
-                result.push_str(command_str.trim_start());
-
-                result
-            }
             Node::ExtGlobPattern {
                 operator,
                 patterns,
@@ -630,6 +603,7 @@ impl Formatter {
 
                 result
             }
+            _ => "".to_string(),
         }
     }
 }

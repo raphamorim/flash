@@ -88,6 +88,7 @@ fn is_special_char(ch: char) -> bool {
 }
 
 /// Lexer that converts input text into tokens
+#[derive(Clone)]
 pub struct Lexer {
     input: Vec<char>,
     pub position: usize,

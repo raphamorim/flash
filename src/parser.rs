@@ -30,10 +30,6 @@ pub enum Node {
     },
     Comment(String),
     StringLiteral(String),
-    VariableAssignmentCommand {
-        assignments: Vec<Node>,
-        command: Box<Node>,
-    },
     ExtGlobPattern {
         operator: char,        // ?, *, +, @, !
         patterns: Vec<String>, // The pattern list inside the parentheses
@@ -50,6 +46,15 @@ pub enum Node {
     },
     ElseBranch {
         consequence: Box<Node>,
+    },
+    Function {
+        name: String,
+        body: Box<Node>,
+    },
+    FunctionCall {
+        name: String,
+        args: Vec<String>,
+        redirects: Vec<Redirect>,
     },
 }
 
@@ -100,16 +105,108 @@ impl Parser {
         self.peek_token = self.lexer.next_token();
     }
 
+    // Function definition: name() { ... }
+    fn parse_function_definition(&mut self) -> Node {
+        // Get function name
+        let name = match &self.current_token.kind {
+            TokenKind::Word(word) => word.clone(),
+            _ => String::new(),
+        };
+
+        self.next_token(); // Skip function name
+        self.next_token(); // Skip '('
+        self.next_token(); // Skip ')'
+
+        // We expect a '{' to start the function body
+        if self.current_token.kind != TokenKind::LBrace {
+            // Handle error - expected '{'
+            return Node::Command {
+                name: String::new(),
+                args: Vec::new(),
+                redirects: Vec::new(),
+            };
+        }
+
+        self.next_token(); // Skip '{'
+
+        // Parse the function body until we hit '}'
+        let body = self.parse_until_token_kind(TokenKind::RBrace);
+
+        self.next_token(); // Skip '}'
+
+        Node::Function {
+            name,
+            body: Box::new(body),
+        }
+    }
+
+    // Function definition with keyword: function name { ... }
+    fn parse_function_with_keyword(&mut self) -> Node {
+        self.next_token(); // Skip 'function' keyword
+
+        // Get function name
+        let name = match &self.current_token.kind {
+            TokenKind::Word(word) => word.clone(),
+            _ => String::new(),
+        };
+
+        self.next_token(); // Skip function name
+
+        // Check if there's the optional () syntax
+        if self.current_token.kind == TokenKind::LParen {
+            self.next_token(); // Skip '('
+            if self.current_token.kind == TokenKind::RParen {
+                self.next_token(); // Skip ')'
+            }
+        }
+
+        // We expect a '{' to start the function body
+        if self.current_token.kind != TokenKind::LBrace {
+            // Handle error - expected '{'
+            return Node::Command {
+                name: String::new(),
+                args: Vec::new(),
+                redirects: Vec::new(),
+            };
+        }
+
+        self.next_token(); // Skip '{'
+
+        // Parse the function body until we hit '}'
+        let body = self.parse_until_token_kind(TokenKind::RBrace);
+
+        self.next_token(); // Skip '}'
+
+        Node::Function {
+            name,
+            body: Box::new(body),
+        }
+    }
+
     pub fn parse_statement(&mut self) -> Option<Node> {
         match self.current_token.kind {
-            TokenKind::Word(ref _word) => {
+            TokenKind::Word(ref word) => {
+                // Check for function definition: func_name() { ... }
+                if self.peek_token.kind == TokenKind::LParen {
+                    // Use peek_next_token to look two tokens ahead for the ')'
+                    let next_token = self.lexer.peek_next_token();
+                    if next_token.kind == TokenKind::RParen {
+                        return Some(self.parse_function_definition());
+                    }
+                }
+
+                // Check for function keyword: function func_name { ... }
+                if word == "function" && matches!(self.peek_token.kind, TokenKind::Word(_)) {
+                    return Some(self.parse_function_with_keyword());
+                }
+
                 // Check for variable assignment (VAR=value)
                 if self.peek_token.kind == TokenKind::Assignment {
                     return Some(self.parse_assignment());
                 }
 
-                // Regular command
-                Some(self.parse_command())
+                let command_node = self.parse_command();
+                Some(command_node)
             }
             TokenKind::If => Some(self.parse_if_statement()),
             TokenKind::Elif => Some(self.parse_elif_branch()),
@@ -329,13 +426,13 @@ impl Parser {
             }
         }
 
-        // Ensure we have the right number of operators
-        while operators.len() < statements.len() - 1 {
-            operators.push("".to_string());
-        }
-
         // If we have statements, return a List node; otherwise, return an empty Command node
         if !statements.is_empty() {
+            // Ensure we have the right number of operators
+            while operators.len() < statements.len() - 1 {
+                operators.push("".to_string());
+            }
+
             Node::List {
                 statements,
                 operators,
@@ -884,6 +981,11 @@ mod parser_tests {
         parser.parse_script()
     }
 
+    fn create_parser(input: &str) -> Parser {
+        let lexer = Lexer::new(input);
+        Parser::new(lexer)
+    }
+
     #[test]
     fn test_simple_command() {
         let input = "echo hello world";
@@ -1380,18 +1482,354 @@ fi
     }
 
     #[test]
-    fn test_functions() {
-        let input = r#"
-function hello() {
-    echo "Hello, $1!"
-}
+    fn test_parse_function_declaration() {
+        // Test the name() syntax
+        let mut parser = create_parser("hello() { echo \"Hello, World!\"; }");
+        let result = parser.parse_script();
 
-hello World
-"#;
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
 
-        // This would require additional parsing logic not present in the current code
-        // Just verify it doesn't panic
-        let _result = parse_test(input);
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "hello");
+
+                if let Node::List {
+                    statements,
+                    operators: _,
+                } = &**body
+                {
+                    assert_eq!(statements.len(), 1);
+                    // assert_eq!(operators.len(), 0);
+
+                    if let Node::Command { name, args, .. } = &statements[0] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "Hello, World!");
+                    } else {
+                        panic!("Expected Command node in function body");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_keyword_declaration() {
+        // Test the function keyword syntax
+        let mut parser = create_parser("function greet { echo \"Greetings!\"; }");
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "greet");
+
+                if let Node::List { statements, .. } = &**body {
+                    assert_eq!(statements.len(), 1);
+
+                    if let Node::Command { name, args, .. } = &statements[0] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "Greetings!");
+                    } else {
+                        panic!("Expected Command node in function body");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_multiple_statements() {
+        let mut parser = create_parser(
+            "multi() { 
+            echo \"First line\"
+            echo \"Second line\"
+            return 0
+        }",
+        );
+
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "multi");
+
+                if let Node::List {
+                    statements,
+                    operators,
+                } = &**body
+                {
+                    assert_eq!(statements.len(), 3);
+                    assert_eq!(operators.len(), 2);
+
+                    // Check first command
+                    if let Node::Command { name, args, .. } = &statements[0] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "First line");
+                    } else {
+                        panic!("Expected first Command node");
+                    }
+
+                    // Check second command
+                    if let Node::Command { name, args, .. } = &statements[1] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "Second line");
+                    } else {
+                        panic!("Expected second Command node");
+                    }
+
+                    // Check third command
+                    if let Node::Command { name, args, .. } = &statements[2] {
+                        assert_eq!(name, "return");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "0");
+                    } else {
+                        panic!("Expected third Command node");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
+    }
+
+    // #[test]
+    // fn test_parse_function_call() {
+    //     let mut parser = create_parser("greet \"Hello World\"");
+    //     let result = parser.parse_script();
+
+    //     if let Node::List { statements, .. } = result {
+    //         assert_eq!(statements.len(), 1);
+
+    //         // This should be detected as a function call
+    //         if let Node::FunctionCall { name, args } = &statements[0] {
+    //             assert_eq!(name, "greet");
+    //             assert_eq!(args.len(), 1);
+    //             assert_eq!(args[0], "Hello World");
+    //         } else {
+    //             panic!("Expected FunctionCall node");
+    //         }
+    //     } else {
+    //         panic!("Expected List node at top level");
+    //     }
+    // }
+
+    // #[test]
+    // fn test_parse_multiple_functions() {
+    //     let mut parser = create_parser("
+    //         hello() { echo \"Hello\"; }
+    //         function goodbye { echo \"Goodbye\"; }
+
+    //         # Call the functions
+    //         hello
+    //         goodbye
+    //     ");
+
+    //     let result = parser.parse_script();
+
+    //     if let Node::List { statements, .. } = result {
+    //         assert_eq!(statements.len(), 4, "Expected 4 statements: 2 function definitions and 2 function calls");
+
+    //         // First function
+    //         if let Node::Function { name, .. } = &statements[0] {
+    //             assert_eq!(name, "hello");
+    //         } else {
+    //             panic!("Expected first Function node");
+    //         }
+
+    //         // Second function
+    //         if let Node::Function { name, .. } = &statements[1] {
+    //             assert_eq!(name, "goodbye");
+    //         } else {
+    //             panic!("Expected second Function node");
+    //         }
+
+    //         // First function call
+    //         if let Node::FunctionCall { name, args } = &statements[2] {
+    //             assert_eq!(name, "hello");
+    //             assert_eq!(args.len(), 0);
+    //         } else {
+    //             panic!("Expected hello function call");
+    //         }
+
+    //         // Second function call
+    //         if let Node::FunctionCall { name, args } = &statements[3] {
+    //             assert_eq!(name, "goodbye");
+    //             assert_eq!(args.len(), 0);
+    //         } else {
+    //             panic!("Expected goodbye function call");
+    //         }
+    //     } else {
+    //         panic!("Expected List node at top level");
+    //     }
+    // }
+
+    #[test]
+    fn test_function_with_redirections() {
+        let mut parser = create_parser("log() { echo \"Logging info\" > /tmp/log.txt; }");
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "log");
+
+                if let Node::List { statements, .. } = &**body {
+                    assert_eq!(statements.len(), 1);
+
+                    if let Node::Command {
+                        name,
+                        args,
+                        redirects,
+                    } = &statements[0]
+                    {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "Logging info");
+
+                        // Check redirection
+                        assert_eq!(redirects.len(), 1);
+                        assert_eq!(redirects[0].file, "/tmp/log.txt");
+                        assert!(matches!(redirects[0].kind, RedirectKind::Output));
+                    } else {
+                        panic!("Expected Command node with redirection");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
+    }
+
+    #[test]
+    fn test_function_with_pipeline() {
+        let mut parser =
+            create_parser("process_data() { cat file.txt | grep \"pattern\" | sort; }");
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "process_data");
+
+                if let Node::List { statements, .. } = &**body {
+                    assert_eq!(statements.len(), 1);
+
+                    // Check that the body contains a pipeline
+                    if let Node::Pipeline { commands } = &statements[0] {
+                        assert_eq!(commands.len(), 3);
+
+                        // Check first command - cat
+                        if let Node::Command { name, args, .. } = &commands[0] {
+                            assert_eq!(name, "cat");
+                            assert_eq!(args.len(), 1);
+                            assert_eq!(args[0], "file.txt");
+                        } else {
+                            panic!("Expected Command node for cat");
+                        }
+
+                        // Check second command - grep
+                        if let Node::Command { name, args, .. } = &commands[1] {
+                            assert_eq!(name, "grep");
+                            assert_eq!(args.len(), 1);
+                            assert_eq!(args[0], "pattern");
+                        } else {
+                            panic!("Expected Command node for grep");
+                        }
+
+                        // Check third command - sort
+                        if let Node::Command { name, args, .. } = &commands[2] {
+                            assert_eq!(name, "sort");
+                            assert_eq!(args.len(), 0);
+                        } else {
+                            panic!("Expected Command node for sort");
+                        }
+                    } else {
+                        panic!("Expected Pipeline node in function body");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
+    }
+
+    #[test]
+    fn test_function_with_variable_assignment() {
+        let mut parser = create_parser("setup() { local name=\"value\"; echo $name; }");
+        let result = parser.parse_script();
+
+        if let Node::List { statements, .. } = result {
+            assert_eq!(statements.len(), 1);
+
+            if let Node::Function { name, body } = &statements[0] {
+                assert_eq!(name, "setup");
+
+                if let Node::List { statements, .. } = &**body {
+                    assert_eq!(statements.len(), 2);
+
+                    // Check variable assignment
+                    if let Node::Assignment { name, value } = &statements[0] {
+                        assert_eq!(name, "local");
+
+                        if let Node::StringLiteral(val) = &**value {
+                            assert_eq!(val, "name=\"value\"");
+                        } else {
+                            panic!("Expected StringLiteral for value");
+                        }
+                    } else {
+                        panic!("Expected Assignment node");
+                    }
+
+                    // Check echo command
+                    if let Node::Command { name, args, .. } = &statements[1] {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "$name");
+                    } else {
+                        panic!("Expected Command node");
+                    }
+                } else {
+                    panic!("Expected List node for function body");
+                }
+            } else {
+                panic!("Expected Function node");
+            }
+        } else {
+            panic!("Expected List node at top level");
+        }
     }
 
     #[test]
@@ -1914,9 +2352,49 @@ esac
         let input = "VAR1=value1 VAR2=value2 command arg1 arg2";
         let result = parse_test(input);
 
-        // For now, just verify that parsing doesn't panic
-        // More rigorous validation once the feature is implemented
-        assert!(matches!(result, Node::List { .. }));
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 3);
+
+                // Check first assignment
+                match &statements[0] {
+                    Node::Assignment { name, value } => {
+                        assert_eq!(name, "VAR1");
+                        match &**value {
+                            Node::StringLiteral(val) => {
+                                assert_eq!(val, "value1");
+                            }
+                            _ => panic!("Expected StringLiteral node for VAR1"),
+                        }
+                    }
+                    _ => panic!("Expected Assignment node for VAR1"),
+                }
+
+                // Check second assignment
+                match &statements[1] {
+                    Node::Assignment { name, value } => {
+                        assert_eq!(name, "VAR2");
+                        match &**value {
+                            Node::StringLiteral(val) => {
+                                assert_eq!(val, "value2");
+                            }
+                            _ => panic!("Expected StringLiteral node for VAR2"),
+                        }
+                    }
+                    _ => panic!("Expected Assignment node for VAR2"),
+                }
+
+                // Check command
+                match &statements[2] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "command");
+                        assert_eq!(args, &["arg1", "arg2"]);
+                    }
+                    _ => panic!("Expected Command node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
     }
 
     #[test]
@@ -1924,11 +2402,42 @@ esac
         let input = "VAR1=value1 VAR2=value2";
         let result = parse_test(input);
 
-        // For now, just verify that parsing doesn't panic
-        // More rigorous validation once the feature is implemented
-        assert!(matches!(result, Node::List { .. }));
-    }
+        match result {
+            Node::List { statements, .. } => {
+                // Multiple assignments should be handled as separate statements
+                assert_eq!(statements.len(), 2);
 
+                // Check first assignment
+                match &statements[0] {
+                    Node::Assignment { name, value } => {
+                        assert_eq!(name, "VAR1");
+                        match &**value {
+                            Node::StringLiteral(val) => {
+                                assert_eq!(val, "value1");
+                            }
+                            _ => panic!("Expected StringLiteral node for VAR1"),
+                        }
+                    }
+                    _ => panic!("Expected Assignment node for VAR1"),
+                }
+
+                // Check second assignment
+                match &statements[1] {
+                    Node::Assignment { name, value } => {
+                        assert_eq!(name, "VAR2");
+                        match &**value {
+                            Node::StringLiteral(val) => {
+                                assert_eq!(val, "value2");
+                            }
+                            _ => panic!("Expected StringLiteral node for VAR2"),
+                        }
+                    }
+                    _ => panic!("Expected Assignment node for VAR2"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
     #[test]
     fn test_if_statement() {
         let input = r#"
@@ -1960,7 +2469,7 @@ fi
                     assert_eq!(args[1], "=");
                     assert_eq!(args[2], "test");
                 } else {
-                    panic!("Expected condition to be a Command node");
+                    panic!("Expected condition to be a Command node {:?}", condition);
                 }
 
                 // Check the consequence contains an echo command
@@ -2214,64 +2723,203 @@ fi
     fn test_real_pkgbuild_file() {
         // Retired from https://gitlab.archlinux.org/archlinux/packaging/packages/rio/-/blob/main/PKGBUILD
         let content = "
-# Maintainer:  Orhun Parmaksız <orhun@archlinux.org>
-# Maintainer: Caleb Maclennan <caleb@alerque.com>
-# Contributor: bbx0 <39773919+bbx0@users.noreply.github.com>
-# Contributor: Raphael Amorim <rapha850@gmail.com>
+    # Maintainer:  Orhun Parmaksız <orhun@archlinux.org>
+    # Maintainer: Caleb Maclennan <caleb@alerque.com>
+    # Contributor: bbx0 <39773919+bbx0@users.noreply.github.com>
+    # Contributor: Raphael Amorim <rapha850@gmail.com>
+    pkgname=rio
+    pkgver=0.2.12
+    pkgrel=1
+    pkgdesc=\"A hardware-accelerated GPU terminal emulator powered by WebGPU\"
+    arch=('x86_64')
+    url=\"https://github.com/raphamorim/rio\"
+    license=(\"MIT\")
+    # https://raphamorim.io/rio/install/#arch-linux
+    options=('!lto')
+    depends=(
+    'gcc-libs'
+    'fontconfig'
+    'freetype2'
+    'glibc'
+    'hicolor-icon-theme'
+    )
+    makedepends=(
+    'cargo'
+    'cmake'
+    'desktop-file-utils'
+    'libxcb'
+    'libxkbcommon'
+    'python'
+    )
+    source=(\"${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz\")
+    sha512sums=('2a73567a591b93707a35e1658572fb48cd8dbeda4cf4418de5887183b0c90c93213b6f15ff47a50b9aaaccd295e185ebcfb594847d7ef8c9e91293740a78c493')
+    prepare() {
+    cd \"${pkgname}-${pkgver}\"
+    cargo fetch --locked --target \"$(rustc -vV | sed -n 's/host: //p')\"
+    }
+    build() {
+    cd \"${pkgname}-${pkgver}\"
+    cargo build --frozen --release --all-features
+    }
+    check() {
+    cd \"${pkgname}-${pkgver}\"
+    cargo test --frozen --workspace
+    }
+    package() {
+    cd \"${pkgname}-${pkgver}\"
+    install -Dm0755 -t \"${pkgdir}/usr/bin/\" \"target/release/${pkgname}\"
+    install -Dm0644 -t \"${pkgdir}/usr/share/doc/${pkgname}/\" \"README.md\"
+    install -Dm0644 -t \"${pkgdir}/usr/share/licenses/${pkgname}/\" \"LICENSE\"
+    desktop-file-install -m 644 --dir \"${pkgdir}/usr/share/applications/\" \"misc/${pkgname}.desktop\"
+    install -Dm0644 \"docs/static/assets/${pkgname}-logo.svg\" \"$pkgdir/usr/share/icons/hicolor/scalable/apps/${pkgname}.svg\"
+    }
+    # vim: ts=2 sw=2 et:
+    ";
 
-pkgname=rio
-pkgver=0.2.12
-pkgrel=1
-pkgdesc=\"A hardware-accelerated GPU terminal emulator powered by WebGPU\"
-arch=('x86_64')
-url=\"https://github.com/raphamorim/rio\"
-license=(\"MIT\")
-# https://raphamorim.io/rio/install/#arch-linux
-options=('!lto')
-depends=(
-  'gcc-libs'
-  'fontconfig'
-  'freetype2'
-  'glibc'
-  'hicolor-icon-theme'
-)
-makedepends=(
-  'cargo'
-  'cmake'
-  'desktop-file-utils'
-  'libxcb'
-  'libxkbcommon'
-  'python'
-)
-source=(\"${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz\")
-sha512sums=('2a73567a591b93707a35e1658572fb48cd8dbeda4cf4418de5887183b0c90c93213b6f15ff47a50b9aaaccd295e185ebcfb594847d7ef8c9e91293740a78c493')
+        // Create a lexer for the content
+        let lexer = Lexer::new(content);
 
-prepare() {
-  cd \"${pkgname}-${pkgver}\"
-  cargo fetch --locked --target \"$(rustc -vV | sed -n 's/host: //p')\"
-}
+        // Create a parser with the lexer
+        let mut parser = Parser::new(lexer);
 
-build() {
-  cd \"${pkgname}-${pkgver}\"
-  cargo build --frozen --release --all-features
-}
+        // Parse the entire script
+        let ast = parser.parse_script();
 
-check() {
-  cd \"${pkgname}-${pkgver}\"
-  cargo test --frozen --workspace
-}
+        // Expected structure (high-level)
+        // 1. Multiple comment nodes
+        // 2. Multiple variable assignments (pkgname, pkgver, etc.)
+        // 3. Function definitions (prepare, build, check, package)
 
-package() {
-  cd \"${pkgname}-${pkgver}\"
-  install -Dm0755 -t \"${pkgdir}/usr/bin/\" \"target/release/${pkgname}\"
-  install -Dm0644 -t \"${pkgdir}/usr/share/doc/${pkgname}/\" \"README.md\"
-  install -Dm0644 -t \"${pkgdir}/usr/share/licenses/${pkgname}/\" \"LICENSE\"
-  desktop-file-install -m 644 --dir \"${pkgdir}/usr/share/applications/\" \"misc/${pkgname}.desktop\"
-  install -Dm0644 \"docs/static/assets/${pkgname}-logo.svg\" \"$pkgdir/usr/share/icons/hicolor/scalable/apps/${pkgname}.svg\"
-}
-# vim: ts=2 sw=2 et:
-";
-        let result = parse_test(content);
-        println!("{:?}", result);
+        // Verify the structure is a List node containing statements
+        if let Node::List {
+            statements,
+            operators: _,
+        } = ast
+        {
+            // Check the number of statements
+            println!("Number of statements: {}", statements.len());
+
+            // Check that we have the expected number of function definitions (4)
+            let function_count = statements
+                .iter()
+                .filter(|node| matches!(node, Node::Function { .. }))
+                .count();
+            assert_eq!(function_count, 4, "Expected 4 function definitions");
+
+            // Check that we have assignment nodes for package variables
+            let pkgname_assignment = statements.iter().find(|node| {
+                if let Node::Assignment { name, .. } = node {
+                    name == "pkgname"
+                } else {
+                    false
+                }
+            });
+            assert!(pkgname_assignment.is_some(), "pkgname assignment not found");
+
+            // Verify the prepare function content
+            if let Some(prepare_fn) = statements.iter().find(|node| {
+                if let Node::Function { name, .. } = node {
+                    name == "prepare"
+                } else {
+                    false
+                }
+            }) {
+                if let Node::Function { name, body } = prepare_fn {
+                    assert_eq!(name, "prepare", "Function name should be 'prepare'");
+
+                    // Check that the function body contains a cd command followed by cargo fetch
+                    if let Node::List {
+                        statements: fn_statements,
+                        ..
+                    } = body.as_ref()
+                    {
+                        assert!(
+                            fn_statements.len() >= 2,
+                            "prepare function should have at least 2 statements"
+                        );
+
+                        // Check for cd command
+                        if let Some(Node::Command { name, .. }) = fn_statements.first() {
+                            assert_eq!(name, "cd", "First command in prepare should be 'cd'");
+                        } else {
+                            panic!("First statement in prepare should be a cd command");
+                        }
+
+                        // Check for cargo fetch command
+                        if let Some(Node::Command { name, .. }) = fn_statements.get(1) {
+                            assert_eq!(
+                                name, "cargo",
+                                "Second command in prepare should be 'cargo'"
+                            );
+                        } else {
+                            panic!("Second statement in prepare should be a cargo command");
+                        }
+                    } else {
+                        panic!("Function body should be a List node");
+                    }
+                } else {
+                    panic!("Expected prepare to be a Function node");
+                }
+            } else {
+                panic!("prepare function not found");
+            }
+
+            // Verify the package function which contains variable references in commands
+            if let Some(package_fn) = statements.iter().find(|node| {
+                if let Node::Function { name, .. } = node {
+                    name == "package"
+                } else {
+                    false
+                }
+            }) {
+                if let Node::Function { name, body } = package_fn {
+                    assert_eq!(name, "package", "Function name should be 'package'");
+
+                    // Check the contents of the package function
+                    if let Node::List {
+                        statements: fn_statements,
+                        ..
+                    } = body.as_ref()
+                    {
+                        // Check for install commands
+                        let install_commands = fn_statements.iter().filter(|node| {
+                            matches!(node, Node::Command { name, .. } if name == "install")
+                        }).count();
+
+                        // There should be several install commands in the package function
+                        assert!(
+                            install_commands >= 3,
+                            "Expected at least 3 install commands in package function"
+                        );
+
+                        // Check for commands that use variable references
+                        let commands_with_vars = fn_statements
+                            .iter()
+                            .filter(|node| {
+                                if let Node::Command { args, .. } = node {
+                                    args.iter().any(|arg| {
+                                        arg.contains("${pkgname}") || arg.contains("$pkgdir")
+                                    })
+                                } else {
+                                    false
+                                }
+                            })
+                            .count();
+
+                        // Verify that we have commands using variables
+                        assert!(
+                            commands_with_vars > 0,
+                            "Expected commands using variables in package function"
+                        );
+                    }
+                }
+            } else {
+                panic!("package function not found");
+            }
+
+            println!("Test passed successfully!");
+        } else {
+            panic!("Expected AST root to be a List node");
+        }
     }
 }

@@ -229,6 +229,12 @@ mystsh = "0.x"
 - [ ] Loops for parser and interop.
 - [ ] Array for parser and interop.
 
+## Resources
+
+- https://www.gnu.org/software/bash/manual/bash.html
+- https://www.shellcheck.net/
+- https://stackblitz.com/edit/bash-ast?file=src%2Fapp%2Fapp.component.ts
+
 ## License
 
 [GPL-3.0 License](LICENSE) © [Raphael Amorim](https://github.com/raphamorim/)
