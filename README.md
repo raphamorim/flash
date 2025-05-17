@@ -158,6 +158,24 @@ fn test_simple_command() {
 }
 ```
 
+#### As Formatter
+
+```rust
+assert_eq!(
+    Formatter::format_str("       # This is a comment"),
+    "# This is a comment"
+);
+```
+
+Or by receiving AST
+
+```rust
+let mut formatter = Formatter::new();
+let node = Node::Comment(" This is a comment".to_string());
+
+assert_eq!(formatter.format(&node), "# This is a comment");
+```
+
 ## Myst Feature Coverage
 
 This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
@@ -224,7 +242,7 @@ mystsh = "0.x"
 
 ## TODO
 
-- [ ] Remove interop custom functions from `run_interop` and allow to receive as parameter. It split the current code there to `bin.rs` file.
+- [ ] Remove interop custom functions from `run_interop` and allow to receive as parameter. It will split the current code there to `bin.rs` file.
 - [ ] Functions for parser and interop.
 - [ ] Loops for parser and interop.
 - [ ] Array for parser and interop.
