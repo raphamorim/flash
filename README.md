@@ -224,7 +224,7 @@ mystsh = "0.x"
 
 ## TODO
 
-- [ ] If for parser and interop.
+- [ ] Remove interop custom functions from `run_interop` and allow to receive as parameter. It split the current code there to `bin.rs` file.
 - [ ] Functions for parser and interop.
 - [ ] Loops for parser and interop.
 - [ ] Array for parser and interop.
