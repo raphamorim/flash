@@ -1,6 +1,6 @@
 [package]
 name = "mystsh"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Mystical shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"

@@ -1130,8 +1130,7 @@ impl Interpreter {
                             }
                         }
                         _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Other,
+                            return Err(io::Error::other(
                                 "Expected a Command in the pipeline",
                             ));
                         }
@@ -1185,8 +1184,7 @@ impl Interpreter {
                         self.variables.insert(name.clone(), output);
                     }
                     _ => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
+                        return Err(io::Error::other(
                             "Unsupported value type for assignment",
                         ));
                     }
@@ -1195,8 +1193,7 @@ impl Interpreter {
             }
             Node::CommandSubstitution { command: _ } => {
                 // This should be handled by the caller
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     "Unexpected command substitution node",
                 ))
             }
@@ -1222,8 +1219,7 @@ impl Interpreter {
                 let entries = match fs::read_dir(".") {
                     Ok(entries) => entries,
                     Err(e) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
+                        return Err(io::Error::other(
                             format!("Failed to read directory: {}", e),
                         ));
                     }
