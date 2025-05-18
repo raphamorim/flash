@@ -10,6 +10,61 @@ Myst is a fast, extensible, and hackable toolkit for working with POSIX-style sh
 
 Myst was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
 
+## Feature Coverage
+
+This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
+
+Legends:
+
+- ✅ fully supported.
+- ⚠️ only supported in parser and formatter.
+- ❌ not supported.
+
+| Category              | Functionality / Feature                         | POSIX Shell | Bash | Myst | Notes |
+|-----------------------|--------------------------------------------------|-------------|------|------|-------|
+| **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
+|                       | Command substitution                            | ✅          | ✅   | ✅  | `$(cmd)` and `` `cmd` `` |
+|                       | Arithmetic substitution                         | ❌          | ✅   | ❌  | `$((expr))` |
+|                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
+|                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
+|                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ❌  | |
+| **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ❌  | |
+|                       | `case` / `esac`                                 | ✅          | ✅   | ❌  | |
+|                       | `for` loops                                     | ✅          | ✅   | ❌  | |
+|                       | `while`, `until` loops                          | ✅          | ✅   | ❌  | |
+|                       | `select` loop                                   | ❌          | ✅   | ❌  | |
+|                       | `[[ ... ]]` test command                        | ❌          | ✅   | ❌  | Extended test |
+| **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | ✅  | |
+|                       | `function` keyword                              | ❌          | ✅   | ✅  | Bash-specific |
+| **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | ✅          | ✅   | ✅  | |
+|                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | ❌  | |
+|                       | Here strings (`<<<`)                            | ❌          | ✅   | ❌  | |
+|                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | ❌  | |
+| **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | ❌  | |
+|                       | Job control commands (`fg`, `bg`, `jobs`)       | ✅          | ✅   | ✅  | May be interactive-only |
+|                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ❌  | |
+| **Arrays**            | Indexed arrays                                  | ❌          | ✅   | ✅  | `arr=(a b c)` |
+|                       | Associative arrays                              | ❌          | ✅   | ❌  | `declare -A` |
+| **Parameter Expansion** | `${var}` basic expansion                    | ✅          | ✅   | ❌  | |
+|                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | ❌  | |
+|                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | ❌  | |
+|                       | `${!var}` indirect expansion                    | ❌          | ✅   | ❌  | |
+|                       | `${var[@]}` / `${var[*]}` array expansion       | ❌          | ✅   | ❌  | |
+| **Command Execution** | Pipelines (`|`)                                 | ✅          | ✅   | ❌  | |
+|                       | Logical AND / OR (`&&`, `||`)                   | ✅          | ✅   | ❌  | |
+|                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | ❌  | |
+|                       | Subshell (`( )`)                                | ✅          | ✅   | ❌  | |
+|                       | Coprocesses (`coproc`)                          | ❌          | ✅   | ❌  | |
+| **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | ✅          | ✅   | ✅  | |
+|                       | `shopt`, `declare`, `typeset`                   | ❌          | ✅   | ❌  | Bash-only |
+|                       | `let`, `local`, `export`                        | ✅          | ✅   | ❌  | |
+| **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ❌  | |
+|                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
+| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ❌  | |
+|                       | Extended globbing (`extglob`)                   | ❌          | ✅   | ❌  | Requires `shopt` |
+|                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ❌  | |
+|                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ❌  | `source` is Bash synonym |
+
 ## Install as your shell
 
 > ⚠️ Myst is still under development. Use it with caution in production environments.
@@ -38,29 +93,6 @@ cargo build --release
 sudo cp target/release/myst /bin/
 myst
 ```
-
-#### Interpreter readline support
-
-- ✅ Kill Ring: Text deleted with Ctrl+K, Ctrl+U, or Ctrl+W is saved to a kill ring, allowing it to be yanked (pasted) with Ctrl+Y.
-- ✅ Ability to transpose characters with Ctrl+T.
-- ✅ Incremental History Search: Pressing Ctrl+R initiates a search through command history. Pressing Ctrl+R again searches for the next occurrence of the same pattern.
-- ✅ Bidirectional character and word movement keys.
-- ✅ Ctrl+A: Move cursor to the beginning of the line.
-- ✅ Ctrl+E: Move cursor to the end of the line.
-- ✅ Ctrl+B: Move backward one character (same as left arrow).
-- ✅ Ctrl+F: Move forward one character (same as right arrow).
-- ✅ Ctrl+K: Cut text from cursor to end of line (kill).
-- ✅ Ctrl+U: Cut text from beginning of line to cursor (kill).
-- ✅ Ctrl+Y: Paste (yank) previously killed text.
-- ✅ Ctrl+P: Previous history entry (same as up arrow).
-- ✅ Ctrl+N: Next history entry (same as down arrow).
-- ✅ Ctrl+T: Transpose (swap) characters at cursor.
-- ✅ Ctrl+D: Delete character under cursor (or exit if line is empty).
-- ✅ Ctrl+R: Reverse incremental search through history.
-- ✅ Ctrl+W: Delete word backward.
-- ✅ Ctrl+L: Clear screen and redraw prompt.
-- ✅ Ctrl+C: Cancel/interrupt.
-- ✅ Arrow keys for navigation and history.
 
 ## 🔌 Embed in Your Rust Project
 
@@ -175,62 +207,6 @@ let node = Node::Comment(" This is a comment".to_string());
 
 assert_eq!(formatter.format(&node), "# This is a comment");
 ```
-
-## Myst Feature Coverage
-
-This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
-
-Legends:
-
-- ✅ fully supported.
-- ⚠️ only supported in parser and formatter.
-- ❌ not supported.
-
-| Category              | Functionality / Feature                         | POSIX Shell | Bash | Myst | Notes |
-|-----------------------|--------------------------------------------------|-------------|------|------|-------|
-| **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
-|                       | Command substitution                            | ✅          | ✅   | [ ]  | `$(cmd)` and `` `cmd` `` |
-|                       | Arithmetic substitution                         | ❌          | ✅   | [ ]  | `$((expr))` |
-|                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
-|                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | [ ]  | |
-|                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | [ ]  | |
-| **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | [ ]  | |
-|                       | `case` / `esac`                                 | ✅          | ✅   | [ ]  | |
-|                       | `for` loops                                     | ✅          | ✅   | [ ]  | |
-|                       | `while`, `until` loops                          | ✅          | ✅   | [ ]  | |
-|                       | `select` loop                                   | ❌          | ✅   | [ ]  | |
-|                       | `[[ ... ]]` test command                        | ❌          | ✅   | [ ]  | Extended test |
-| **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | [ ]  | |
-|                       | `function` keyword                              | ❌          | ✅   | [ ]  | Bash-specific |
-| **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | ✅          | ✅   | [ ]  | |
-|                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | [ ]  | |
-|                       | Here strings (`<<<`)                            | ❌          | ✅   | [ ]  | |
-|                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | [ ]  | |
-| **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | [ ]  | |
-|                       | Job control commands (`fg`, `bg`, `jobs`)       | ✅          | ✅   | [ ]  | May be interactive-only |
-|                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | [ ]  | |
-| **Arrays**            | Indexed arrays                                  | ❌          | ✅   | [ ]  | `arr=(a b c)` |
-|                       | Associative arrays                              | ❌          | ✅   | [ ]  | `declare -A` |
-| **Parameter Expansion** | `${var}` basic expansion                    | ✅          | ✅   | [ ]  | |
-|                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | [ ]  | |
-|                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | [ ]  | |
-|                       | `${!var}` indirect expansion                    | ❌          | ✅   | [ ]  | |
-|                       | `${var[@]}` / `${var[*]}` array expansion       | ❌          | ✅   | [ ]  | |
-| **Command Execution** | Pipelines (`|`)                                 | ✅          | ✅   | [ ]  | |
-|                       | Logical AND / OR (`&&`, `||`)                   | ✅          | ✅   | [ ]  | |
-|                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | [ ]  | |
-|                       | Subshell (`( )`)                                | ✅          | ✅   | [ ]  | |
-|                       | Coprocesses (`coproc`)                          | ❌          | ✅   | [ ]  | |
-| **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | ✅          | ✅   | [ ]  | |
-|                       | `shopt`, `declare`, `typeset`                   | ❌          | ✅   | [ ]  | Bash-only |
-|                       | `let`, `local`, `export`                        | ✅          | ✅   | [ ]  | |
-| **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | [ ]  | |
-|                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | [ ]  | |
-| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | [ ]  | |
-|                       | Extended globbing (`extglob`)                   | ❌          | ✅   | [ ]  | Requires `shopt` |
-|                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | [ ]  | |
-|                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | [ ]  | `source` is Bash synonym |
-
 
 ## 📦 Crate Info
 
