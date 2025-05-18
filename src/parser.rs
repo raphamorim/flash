@@ -47,6 +47,9 @@ pub enum Node {
     ElseBranch {
         consequence: Box<Node>,
     },
+    Array {
+        elements: Vec<String>,
+    },
     Function {
         name: String,
         body: Box<Node>,
@@ -584,7 +587,7 @@ impl Parser {
     fn parse_array_assignment(&mut self, name: String) -> Node {
         self.next_token(); // Skip '('
 
-        let mut array_values = Vec::new();
+        let mut array_elements = Vec::new();
 
         // Parse array elements until closing parenthesis
         while self.current_token.kind != TokenKind::RParen
@@ -592,7 +595,7 @@ impl Parser {
         {
             match &self.current_token.kind {
                 TokenKind::Word(word) => {
-                    array_values.push(word.clone());
+                    array_elements.push(word.clone());
                     self.next_token();
                 }
                 TokenKind::SingleQuote => {
@@ -612,7 +615,7 @@ impl Parser {
                         self.next_token(); // Skip closing quote
                     }
 
-                    array_values.push(quoted_value);
+                    array_elements.push(quoted_value);
                 }
                 TokenKind::Quote => {
                     self.next_token(); // Skip opening quote
@@ -631,7 +634,7 @@ impl Parser {
                         self.next_token(); // Skip closing quote
                     }
 
-                    array_values.push(quoted_value);
+                    array_elements.push(quoted_value);
                 }
                 _ => {
                     // Skip other tokens like newlines or spaces in array
@@ -644,12 +647,11 @@ impl Parser {
             self.next_token(); // Skip the closing parenthesis
         }
 
-        // Create a string representation of the array
-        let array_str = format!("({})", array_values.join(" "));
-
         Node::Assignment {
             name,
-            value: Box::new(Node::StringLiteral(array_str)),
+            value: Box::new(Node::Array {
+                elements: array_elements,
+            }),
         }
     }
 
@@ -3573,6 +3575,315 @@ fi
             println!("Test passed successfully!");
         } else {
             panic!("Expected AST root to be a List node");
+        }
+    }
+
+    #[test]
+    fn test_simple_array_assignment() {
+        let input = "fruits=('apple' 'banana' 'orange')";
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "fruits");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "apple");
+                        assert_eq!(elements[1], "banana");
+                        assert_eq!(elements[2], "orange");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_empty_array_assignment() {
+        let input = "empty_array=()";
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "empty_array");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 0);
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_with_double_quotes() {
+        let input = r#"langs=("rust" "go" "python")"#;
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "langs");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "rust");
+                        assert_eq!(elements[1], "go");
+                        assert_eq!(elements[2], "python");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_mixed_quotes() {
+        let input = r#"mixed=('single' "double" unquoted)"#;
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "mixed");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "single");
+                        assert_eq!(elements[1], "double");
+                        assert_eq!(elements[2], "unquoted");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_with_spaces() {
+        let input = r#"spaced=( 'item 1'   "item 2"    'item 3' )"#;
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "spaced");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "item 1");
+                        assert_eq!(elements[1], "item 2");
+                        assert_eq!(elements[2], "item 3");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_with_multiline() {
+        let input = "multiline=(
+            'line 1'
+            \"line 2\"
+            line3
+        )";
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "multiline");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "line 1");
+                        assert_eq!(elements[1], "line 2");
+                        assert_eq!(elements[2], "line3");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_array_assignments() {
+        let input = "fruits=('apple' 'banana')\ncolors=('red' 'blue')";
+        let mut parser = create_parser(input);
+
+        // Parse first array assignment
+        let node1 = parser.parse_statement().unwrap();
+
+        match node1 {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "fruits");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 2);
+                        assert_eq!(elements[0], "apple");
+                        assert_eq!(elements[1], "banana");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+
+        // Skip the newline token
+        if let TokenKind::Newline = parser.current_token.kind {
+            parser.next_token();
+        }
+
+        // Parse second array assignment
+        let node2 = parser.parse_statement().unwrap();
+
+        match node2 {
+            Node::Assignment { name, value } => {
+                assert_eq!(name, "colors");
+                match *value {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 2);
+                        assert_eq!(elements[0], "red");
+                        assert_eq!(elements[1], "blue");
+                    }
+                    _ => panic!("Expected Node::Array, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Assignment, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_parse_full_script_with_arrays() {
+        let input = "#!/bin/bash\n\n# Array definitions\nfruits=('apple' 'banana')\ncolors=('red' 'blue')\n\necho ${fruits[0]}";
+        let mut parser = create_parser(input);
+
+        let script_node = parser.parse_script();
+
+        match script_node {
+            Node::List {
+                statements,
+                operators: _,
+            } => {
+                // Should have at least 3 statements: two array assignments and one echo command
+                assert!(statements.len() >= 3);
+
+                // Check first array assignment (after potential comments)
+                let mut found_fruits_array = false;
+                let mut found_colors_array = false;
+
+                for statement in statements {
+                    if let Node::Assignment { name, value } = statement {
+                        if name == "fruits" {
+                            found_fruits_array = true;
+                            match *value {
+                                Node::Array { elements } => {
+                                    assert_eq!(elements.len(), 2);
+                                    assert_eq!(elements[0], "apple");
+                                    assert_eq!(elements[1], "banana");
+                                }
+                                _ => panic!("Expected Node::Array for fruits, got something else"),
+                            }
+                        } else if name == "colors" {
+                            found_colors_array = true;
+                            match *value {
+                                Node::Array { elements } => {
+                                    assert_eq!(elements.len(), 2);
+                                    assert_eq!(elements[0], "red");
+                                    assert_eq!(elements[1], "blue");
+                                }
+                                _ => panic!("Expected Node::Array for colors, got something else"),
+                            }
+                        }
+                    }
+                }
+
+                assert!(found_fruits_array, "Didn't find fruits array assignment");
+                assert!(found_colors_array, "Didn't find colors array assignment");
+            }
+            _ => panic!("Expected Node::List for script, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_in_function() {
+        let input = "function setup() {\n  local tools=('grep' 'awk' 'sed')\n  echo ${tools[0]}\n}";
+        let mut parser = create_parser(input);
+
+        let node = parser.parse_statement().unwrap();
+
+        match node {
+            Node::Function { name, body } => {
+                assert_eq!(name, "setup");
+
+                match *body {
+                    Node::List {
+                        statements,
+                        operators: _,
+                    } => {
+                        let mut found_array = false;
+
+                        for statement in statements {
+                            if let Node::Assignment { name, value } = statement {
+                                if name == "tools" {
+                                    found_array = true;
+                                    match *value {
+                                        Node::Array { elements } => {
+                                            assert_eq!(elements.len(), 3);
+                                            assert_eq!(elements[0], "grep");
+                                            assert_eq!(elements[1], "awk");
+                                            assert_eq!(elements[2], "sed");
+                                        }
+                                        _ => panic!("Expected Node::Array, got something else"),
+                                    }
+                                }
+                            }
+                        }
+
+                        assert!(found_array, "Didn't find tools array in function body");
+                    }
+                    _ => panic!("Expected Node::List for function body, got something else"),
+                }
+            }
+            _ => panic!("Expected Node::Function, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_array_index_references() {
+        // This test just ensures we can parse scripts with array index references,
+        // even though the parser doesn't specifically handle them
+        let input = "fruits=('apple' 'banana')\necho ${fruits[0]}";
+        let mut parser = create_parser(input);
+
+        // This should parse without errors
+        let script_node = parser.parse_script();
+
+        match script_node {
+            Node::List {
+                statements,
+                operators: _,
+            } => {
+                assert_eq!(statements.len(), 2); // array assignment + echo command
+            }
+            _ => panic!("Expected Node::List, got something else"),
         }
     }
 }
