@@ -515,6 +515,11 @@ impl Parser {
         self.next_token(); // Skip variable name
         self.next_token(); // Skip '='
 
+        // Check for array assignment like arch=('x86_64')
+        if self.current_token.kind == TokenKind::LParen {
+            return self.parse_array_assignment(name);
+        }
+
         // Check for quotes, command substitution, or plain word
         let value = match self.current_token.kind {
             TokenKind::Quote => {
@@ -574,6 +579,78 @@ impl Parser {
         };
 
         Node::Assignment { name, value }
+    }
+
+    fn parse_array_assignment(&mut self, name: String) -> Node {
+        self.next_token(); // Skip '('
+
+        let mut array_values = Vec::new();
+
+        // Parse array elements until closing parenthesis
+        while self.current_token.kind != TokenKind::RParen
+            && self.current_token.kind != TokenKind::EOF
+        {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    array_values.push(word.clone());
+                    self.next_token();
+                }
+                TokenKind::SingleQuote => {
+                    self.next_token(); // Skip opening quote
+
+                    let mut quoted_value = String::new();
+                    while self.current_token.kind != TokenKind::SingleQuote
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        if let TokenKind::Word(word) = &self.current_token.kind {
+                            quoted_value.push_str(word);
+                        }
+                        self.next_token();
+                    }
+
+                    if self.current_token.kind == TokenKind::SingleQuote {
+                        self.next_token(); // Skip closing quote
+                    }
+
+                    array_values.push(quoted_value);
+                }
+                TokenKind::Quote => {
+                    self.next_token(); // Skip opening quote
+
+                    let mut quoted_value = String::new();
+                    while self.current_token.kind != TokenKind::Quote
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        if let TokenKind::Word(word) = &self.current_token.kind {
+                            quoted_value.push_str(word);
+                        }
+                        self.next_token();
+                    }
+
+                    if self.current_token.kind == TokenKind::Quote {
+                        self.next_token(); // Skip closing quote
+                    }
+
+                    array_values.push(quoted_value);
+                }
+                _ => {
+                    // Skip other tokens like newlines or spaces in array
+                    self.next_token();
+                }
+            }
+        }
+
+        if self.current_token.kind == TokenKind::RParen {
+            self.next_token(); // Skip the closing parenthesis
+        }
+
+        // Create a string representation of the array
+        let array_str = format!("({})", array_values.join(" "));
+
+        Node::Assignment {
+            name,
+            value: Box::new(Node::StringLiteral(array_str)),
+        }
     }
 
     pub fn parse_command(&mut self) -> Node {
@@ -3299,7 +3376,7 @@ fi
     }
 
     #[test]
-    fn test_real_pkgbuild_file() {
+    fn test_example_parse_pkgbuild() {
         // Retired from https://gitlab.archlinux.org/archlinux/packaging/packages/rio/-/blob/main/PKGBUILD
         let content = "
     # Maintainer:  Orhun Parmaksız <orhun@archlinux.org>
@@ -3375,9 +3452,6 @@ fi
             operators: _,
         } = ast
         {
-            // Check the number of statements
-            println!("Number of statements: {}", statements.len());
-
             // Check that we have the expected number of function definitions (4)
             let function_count = statements
                 .iter()

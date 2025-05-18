@@ -1855,4 +1855,19 @@ mod lexer_tests {
         ];
         test_tokens(input, expected);
     }
+
+    #[test]
+    fn test_array_declaration() {
+        let input = "colors=(red green blue)";
+        let expected = vec![
+            TokenKind::Word("colors".to_string()),
+            TokenKind::Assignment,
+            TokenKind::LParen,
+            TokenKind::Word("red".to_string()),
+            TokenKind::Word("green".to_string()),
+            TokenKind::Word("blue".to_string()),
+            TokenKind::RParen,
+        ];
+        test_tokens(input, expected);
+    }
 }
