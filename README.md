@@ -89,9 +89,29 @@ git clone https://github.com/raphamorim/myst.git
 cd myst
 cargo build --release
 
-# MacOS/BSD: Change /bin/ to /usr/local/bin/
+# Linux
 sudo cp target/release/myst /bin/
+
+# MacOS/BSD
+sudo cp target/release/myst /usr/local/bin/
+
+# Done
 myst
+```
+
+## Set as default
+
+Optionally you can also set as default
+
+```bash
+# Add your myst path to:
+vim /etc/shells
+
+# Linux:
+chsh -s /bin/myst
+
+# MacOS/BSD:
+chsh -s /usr/local/bin/myst
 ```
 
 ## 🔌 Embed in Your Rust Project
