@@ -3,7 +3,6 @@ use crate::parser::Node;
 use crate::parser::Parser;
 use crate::parser::Redirect;
 use crate::parser::RedirectKind;
-use libc;
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
@@ -476,21 +475,68 @@ impl Interpreter {
 
     // Get the terminal width
     fn get_terminal_width(&self) -> usize {
-        let mut winsize = libc::winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
+        use std::process::Command;
+        
+        let width = if cfg!(unix) {
+            // On Unix-like systems, try `tput cols`
+            Command::new("tput")
+                .arg("cols")
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        String::from_utf8(output.stdout)
+                            .ok()?
+                            .trim()
+                            .parse::<usize>()
+                            .ok()
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    // Fallback: try `stty size` and extract columns
+                    Command::new("stty")
+                        .arg("size")
+                        .output()
+                        .ok()
+                        .and_then(|output| {
+                            if output.status.success() {
+                                let size_str = String::from_utf8(output.stdout).ok()?;
+                                let parts: Vec<&str> = size_str.trim().split_whitespace().collect();
+                                if parts.len() >= 2 {
+                                    parts[1].parse::<usize>().ok()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                })
+        } else if cfg!(windows) {
+            // On Windows, try PowerShell to get console width
+            Command::new("powershell")
+                .args(&["-Command", "(Get-Host).UI.RawUI.WindowSize.Width"])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        String::from_utf8(output.stdout)
+                            .ok()?
+                            .trim()
+                            .parse::<usize>()
+                            .ok()
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            None
         };
-
-        unsafe {
-            if libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut winsize) == 0 {
-                return winsize.ws_col as usize;
-            }
-        }
-
-        // Default if we can't get the terminal width
-        80
+        
+        // Return the detected width or default to 80
+        width.unwrap_or(80)
     }
 
     // Interactive shell that accepts a custom evaluator
