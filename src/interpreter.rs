@@ -180,7 +180,6 @@ impl DefaultEvaluator {
             return interpreter.evaluate_with_evaluator(&commands[0], self);
         }
 
-        // Pipeline implementation (simplified for brevity)
         let mut last_exit_code = 0;
         for command in commands {
             last_exit_code = interpreter.evaluate_with_evaluator(command, self)?;
