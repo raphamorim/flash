@@ -1,16 +1,16 @@
 [package]
-name = "mystsh"
-version = "0.0.3"
+name = "flash"
+version = "0.0.1"
 edition = "2024"
-description = "Mystical shell parser, formatter, and interpreter with Bash support"
+description = "Shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "mystsh"
+name = "flash"
 path = "src/lib.rs"
 
 [[bin]]
-name = "myst"
+name = "flash"
 path = "src/bin.rs"
 
 [features]

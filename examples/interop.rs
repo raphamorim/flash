@@ -1,4 +1,4 @@
-use mystsh::interpreter::Interpreter;
+use flash::interpreter::Interpreter;
 use std::io;
 
 fn main() -> io::Result<()> {

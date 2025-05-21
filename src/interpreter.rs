@@ -14,6 +14,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use termios::{ECHO, ICANON, TCSANOW, Termios, VMIN, VTIME, tcsetattr};
 
+pub trait ShellEvaluator {
+    fn evaluate(&mut self, node: &Node, variables: &mut HashMap<String, String>) -> Result<i32, io::Error>;
+}
+
 /// Shell interpreter
 pub struct Interpreter {
     variables: HashMap<String, String>,

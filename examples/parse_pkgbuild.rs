@@ -1,5 +1,5 @@
-use mystsh::lexer::Lexer;
-use mystsh::parser::Parser;
+use flash::lexer::Lexer;
+use flash::parser::Parser;
 
 fn main() {
     // Retired from https://gitlab.archlinux.org/archlinux/packaging/packages/rio/-/blob/main/PKGBUILD
