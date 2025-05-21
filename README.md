@@ -1,18 +1,18 @@
-# myst (work in progress)
+# Flash (work in progress)
 
-*A mystical shell parser, formatter, and interpreter written in Rust.*
+*A shell parser, formatter, and interpreter written in Rust.*
 
-Myst is a fast, extensible, and hackable toolkit for working with POSIX-style shell scripts. It includes a parser, formatter, and interpreter built from scratch in Rust. Myst understands real-world shell syntax and provides structured AST access for static analysis, tooling, and transformation.
+Flash is a fast, extensible, and hackable toolkit for working with POSIX-style shell scripts. It includes a parser, formatter, and interpreter built from scratch in Rust. Flash understands real-world shell syntax and provides structured AST access for static analysis, tooling, and transformation.
 
 > Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but engineered from the ground up with performance and extensibility in mind.
 
 ## Motivation
 
-Myst was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
+Flash was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
 
 ## Feature Coverage
 
-This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Myst** parser and interpreter implementation in Rust supports.
+This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Flash** parser and interpreter implementation in Rust supports.
 
 Legends:
 
@@ -20,7 +20,7 @@ Legends:
 - ⚠️ only supported in parser and formatter.
 - ❌ not supported.
 
-| Category              | Functionality / Feature                         | POSIX Shell | Bash | Myst | Notes |
+| Category              | Functionality / Feature                         | POSIX Shell | Bash | Flash | Notes |
 |-----------------------|--------------------------------------------------|-------------|------|------|-------|
 | **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
 |                       | Command substitution                            | ✅          | ✅   | ✅  | `$(cmd)` and `` `cmd` `` |
@@ -72,31 +72,31 @@ Legends:
 Option 1:
 
 ```bash
-cargo install mystsh
+cargo install flash
 ```
 
 Option 2:
 
 ```bash
-git clone https://github.com/raphamorim/myst.git
-cd myst && cargo install --path .
+git clone https://github.com/raphamorim/flash.git
+cd flash && cargo install --path .
 ```
 
 Option 3:
 
 ```bash
-git clone https://github.com/raphamorim/myst.git
-cd myst
+git clone https://github.com/raphamorim/flash.git
+cd flash
 cargo build --release
 
 # Linux
-sudo cp target/release/myst /bin/
+sudo cp target/release/flash /bin/
 
 # MacOS/BSD
-sudo cp target/release/myst /usr/local/bin/
+sudo cp target/release/flash /usr/local/bin/
 
 # Done
-myst
+flash
 ```
 
 ## Set as default
@@ -104,14 +104,14 @@ myst
 Optionally you can also set as default
 
 ```bash
-# Add your myst path to:
+# Add your flash path to:
 vim /etc/shells
 
 # Linux:
-chsh -s /bin/myst
+chsh -s /bin/flash
 
 # MacOS/BSD:
-chsh -s /usr/local/bin/myst
+chsh -s /usr/local/bin/flash
 ```
 
 ## 🔌 Embed in Your Rust Project
@@ -119,7 +119,7 @@ chsh -s /usr/local/bin/myst
 #### As an Interpreter
 
 ```rust
-use mystsh::interpreter::Interpreter;
+use flash::interpreter::Interpreter;
 use std::io;
 
 fn main() -> io::Result<()> {
@@ -174,8 +174,8 @@ fn test_function_declaration() {
 #### As a Parser
 
 ```rust
-use mystsh::lexer::Lexer;
-use mystsh::parser::Parser;
+use flash::lexer::Lexer;
+use flash::parser::Parser;
 
 #[test]
 fn test_simple_command() {
@@ -233,7 +233,7 @@ assert_eq!(formatter.format(&node), "# This is a comment");
 Add Myst to your Cargo.toml:
 
 ```toml
-mystsh = "0.x"
+flash = "0.x"
 ```
 
 ## TODO
