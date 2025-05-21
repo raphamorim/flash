@@ -129,6 +129,272 @@ fn main() -> io::Result<()> {
 }
 ```
 
+Note that `run_interactive` will use flash default evaluator.
+
+```rust
+// Default interactive shell using DefaultEvaluator
+pub fn run_interactive(&mut self) -> io::Result<()> {
+    let default_evaluator = DefaultEvaluator;
+    self.run_interactive_with_evaluator(default_evaluator)
+}
+```
+
+You can actually create your own evaluator using Evaluator trait:
+
+```rust
+// Define the evaluation trait that users can implement
+pub trait Evaluator {
+    fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error>;
+}
+
+// Default evaluator that implements the standard shell behavior
+pub struct DefaultEvaluator;
+
+impl Evaluator for DefaultEvaluator {
+    fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error> {
+        match node {
+            Node::Command {
+                name,
+                args,
+                redirects,
+            } => self.evaluate_command(name, args, redirects, interpreter),
+            Node::Pipeline { commands } => self.evaluate_pipeline(commands, interpreter),
+            Node::List {
+                statements,
+                operators,
+            } => self.evaluate_list(statements, operators, interpreter),
+            Node::Assignment { name, value } => self.evaluate_assignment(name, value, interpreter),
+            Node::CommandSubstitution { command: _ } => {
+                Err(io::Error::other("Unexpected command substitution node"))
+            }
+            Node::StringLiteral(_value) => Ok(0),
+            Node::Subshell { list } => interpreter.evaluate_with_evaluator(list, self),
+            Node::Comment(_) => Ok(0),
+            Node::ExtGlobPattern {
+                operator,
+                patterns,
+                suffix,
+            } => self.evaluate_ext_glob(*operator, patterns, suffix, interpreter),
+            _ => Err(io::Error::other("Unsupported node type")),
+        }
+    }
+}
+
+impl DefaultEvaluator {
+    fn evaluate_command(
+        &mut self,
+        name: &str,
+        args: &[String],
+        redirects: &[Redirect],
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Handle built-in commands
+        match name {
+            "cd" => {
+                let dir = if args.is_empty() {
+                    env::var("HOME").unwrap_or_else(|_| ".".to_string())
+                } else {
+                    args[0].clone()
+                };
+
+                match env::set_current_dir(&dir) {
+                    Ok(_) => {
+                        interpreter.variables.insert(
+                            "PWD".to_string(),
+                            env::current_dir()?.to_string_lossy().to_string(),
+                        );
+                        Ok(0)
+                    }
+                    Err(e) => {
+                        eprintln!("cd: {}: {}", dir, e);
+                        Ok(1)
+                    }
+                }
+            }
+            "echo" => {
+                for (i, arg) in args.iter().enumerate() {
+                    print!("{}{}", if i > 0 { " " } else { "" }, arg);
+                }
+                println!();
+                Ok(0)
+            }
+            "export" => {
+                for arg in args {
+                    if let Some(pos) = arg.find('=') {
+                        let (key, value) = arg.split_at(pos);
+                        let value = &value[1..];
+                        interpreter
+                            .variables
+                            .insert(key.to_string(), value.to_string());
+                        unsafe {
+                            env::set_var(key, value);
+                        }
+                    } else if let Some(value) = interpreter.variables.get(arg) {
+                        unsafe {
+                            env::set_var(arg, value);
+                        }
+                    }
+                }
+                Ok(0)
+            }
+            "source" | "." => {
+                if args.is_empty() {
+                    eprintln!("source: filename argument required");
+                    return Ok(1);
+                }
+
+                let filename = &args[0];
+                match fs::read_to_string(filename) {
+                    Ok(content) => interpreter.execute(&content),
+                    Err(e) => {
+                        eprintln!("source: {}: {}", filename, e);
+                        Ok(1)
+                    }
+                }
+            }
+            _ => {
+                // External command
+                let mut command = Command::new(name);
+                command.args(args);
+
+                // Handle redirections
+                for redirect in redirects {
+                    match redirect.kind {
+                        RedirectKind::Input => {
+                            let file = fs::File::open(&redirect.file)?;
+                            command.stdin(Stdio::from(file));
+                        }
+                        RedirectKind::Output => {
+                            let file = fs::File::create(&redirect.file)?;
+                            command.stdout(Stdio::from(file));
+                        }
+                        RedirectKind::Append => {
+                            let file = fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&redirect.file)?;
+                            command.stdout(Stdio::from(file));
+                        }
+                    }
+                }
+
+                // Set environment variables
+                for (key, value) in &interpreter.variables {
+                    command.env(key, value);
+                }
+
+                match command.status() {
+                    Ok(status) => Ok(status.code().unwrap_or(0)),
+                    Err(_) => {
+                        eprintln!("{}: command not found", name);
+                        Ok(127)
+                    }
+                }
+            }
+        }
+    }
+
+    fn evaluate_pipeline(
+        &mut self,
+        commands: &[Node],
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        if commands.is_empty() {
+            return Ok(0);
+        }
+
+        if commands.len() == 1 {
+            return interpreter.evaluate_with_evaluator(&commands[0], self);
+        }
+
+        let mut last_exit_code = 0;
+        for command in commands {
+            last_exit_code = interpreter.evaluate_with_evaluator(command, self)?;
+        }
+        Ok(last_exit_code)
+    }
+
+    fn evaluate_list(
+        &mut self,
+        statements: &[Node],
+        operators: &[String],
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        let mut last_exit_code = 0;
+
+        for (i, statement) in statements.iter().enumerate() {
+            last_exit_code = interpreter.evaluate_with_evaluator(statement, self)?;
+
+            if i < operators.len() {
+                match operators[i].as_str() {
+                    "&&" => {
+                        if last_exit_code != 0 {
+                            break;
+                        }
+                    }
+                    "||" => {
+                        if last_exit_code == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(last_exit_code)
+    }
+
+    fn evaluate_assignment(
+        &mut self,
+        name: &str,
+        value: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        match value {
+            Node::StringLiteral(string_value) => {
+                let expanded_value = interpreter.expand_variables(string_value);
+                interpreter
+                    .variables
+                    .insert(name.to_string(), expanded_value);
+            }
+            Node::CommandSubstitution { command } => {
+                let output = interpreter.capture_command_output(command, self)?;
+                interpreter.variables.insert(name.to_string(), output);
+            }
+            _ => {
+                return Err(io::Error::other("Unsupported value type for assignment"));
+            }
+        }
+        Ok(0)
+    }
+
+    fn evaluate_ext_glob(
+        &mut self,
+        operator: char,
+        patterns: &[String],
+        suffix: &str,
+        interpreter: &Interpreter,
+    ) -> Result<i32, io::Error> {
+        let entries = fs::read_dir(".")?;
+        let mut matches = Vec::new();
+
+        for entry in entries.flatten() {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if interpreter.matches_ext_glob(&file_name, operator, patterns, suffix) {
+                matches.push(file_name);
+            }
+        }
+
+        for m in matches {
+            println!("{}", m);
+        }
+
+        Ok(0)
+    }
+}
+```
+
 #### As a Lexer/Tokenizer
 
 ```rust
@@ -238,7 +504,6 @@ flash = "0.x"
 
 ## TODO
 
-- [ ] Remove interop custom functions from `run_interop` and allow to receive as parameter. It will split the current code there to `bin.rs` file.
 - [ ] Functions for parser and interop.
 - [ ] Loops for parser and interop.
 - [ ] Array index references.
