@@ -9,12 +9,12 @@ use std::env;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use termios::{ECHO, ICANON, TCSANOW, Termios, VMIN, VTIME, tcsetattr};
 
-// Define the evaluation trait that users can implement
 pub trait Evaluator {
     fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error>;
 }
@@ -406,11 +406,20 @@ impl Interpreter {
                             if name.starts_with(prefix) {
                                 if let Some(stripped) = name.strip_prefix(prefix) {
                                     if let Ok(metadata) = entry.path().metadata() {
-                                        if metadata.is_file()
-                                            && metadata.permissions().mode() & 0o111 != 0
-                                        {
-                                            full_names.push(name.to_string());
-                                            suffixes.push(stripped.to_string());
+                                        if metadata.is_file() {
+                                            #[cfg(unix)]
+                                            {
+                                                if metadata.permissions().mode() & 0o111 != 0 {
+                                                    full_names.push(name.to_string());
+                                                    suffixes.push(stripped.to_string());
+                                                }
+                                            }
+                                            #[cfg(not(unix))]
+                                            {
+                                                // On non-Unix systems, assume all files in PATH are executable
+                                                full_names.push(name.to_string());
+                                                suffixes.push(stripped.to_string());
+                                            }
                                         }
                                     }
                                 }

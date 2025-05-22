@@ -67,7 +67,7 @@ Legends:
 
 ## Install as your shell
 
-> ⚠️ Myst is still under development. Use it with caution in production environments.
+> ⚠️ Flash is still under development. Use it with caution in production environments.
 
 Option 1:
 
@@ -496,7 +496,7 @@ assert_eq!(formatter.format(&node), "# This is a comment");
 
 ## 📦 Crate Info
 
-Add Myst to your Cargo.toml:
+Add Flash to your Cargo.toml:
 
 ```toml
 flash = "0.x"
