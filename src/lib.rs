@@ -5,3 +5,5 @@ pub mod parser;
 pub mod formatter;
 #[cfg(feature = "interpreter")]
 pub mod interpreter;
+#[cfg(feature = "interpreter")]
+mod flash;

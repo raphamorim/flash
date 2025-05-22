@@ -1,3 +1,4 @@
+use crate::flash;
 use crate::lexer::Lexer;
 use crate::parser::Node;
 use crate::parser::Parser;
@@ -282,16 +283,24 @@ impl Default for Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        let mut variables = HashMap::new();
-
         // Initialize some basic environment variables
-        for (key, value) in env::vars() {
-            variables.insert(key, value);
+        let mut variables = HashMap::default();
+
+        if let Ok(variables_from_proc) = flash::env::load_env_from_proc() {
+            for (key, value)  in variables_from_proc.iter() {
+                variables.insert(key.to_owned(), value.to_owned());
+            }
+        }
+
+        // Load configuration from ~/.flashrc
+        if let Err(e) = load_flashrc(&mut variables) {
+            eprintln!("Warning: Failed to load ~/.flashrc: {}", e);
         }
 
         // Set up some shell variables
         variables.insert("?".to_string(), "0".to_string());
-        variables.insert("SHELL".to_string(), "bash".to_string());
+        variables.insert("SHELL".to_string(), "flash".to_string());
+        variables.insert("$$".to_string(), std::process::id().to_string());
 
         let history_file = env::var("HOME")
             .map(|home| format!("{}/.shell_history", home))
