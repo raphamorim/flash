@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2025 Raphael Amorim
+ *
+ * This file is part of flash, which is licensed
+ * under GNU General Public License v3.0.
+ */
+
 use std::collections::HashMap;
 // use std::ffi::CStr;
 // use std::os::raw::c_char;

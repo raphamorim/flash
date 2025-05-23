@@ -10,6 +10,15 @@ Flash is a fast, extensible, and hackable toolkit for working with POSIX-style s
 
 Flash was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
 
+## TODO
+
+Ideally I would like to use Flash in my daily basis. It's still far from proper usage.
+
+- [ ] `flashrc`.
+- [ ] Functions for parser and interop.
+- [ ] Loops for parser and interop.
+- [ ] Array index references.
+
 ## Feature Coverage
 
 This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Flash** parser and interpreter implementation in Rust supports.
@@ -503,12 +512,6 @@ Add Flash to your Cargo.toml:
 ```toml
 flash = "0.x"
 ```
-
-## TODO
-
-- [ ] Functions for parser and interop.
-- [ ] Loops for parser and interop.
-- [ ] Array index references.
 
 ## Resources
 

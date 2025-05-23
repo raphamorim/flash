@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2025 Raphael Amorim
+ *
+ * This file is part of flash, which is licensed
+ * under GNU General Public License v3.0.
+ */
+
 /// Token types that can be produced by the lexer
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
