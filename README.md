@@ -519,14 +519,6 @@ let node = Node::Comment(" This is a comment".to_string());
 assert_eq!(formatter.format(&node), "# This is a comment");
 ```
 
-## 📦 Crate Info
-
-Add Flash to your Cargo.toml:
-
-```toml
-flash = "0.x"
-```
-
 ## Resources
 
 - https://www.gnu.org/software/bash/manual/bash.html
