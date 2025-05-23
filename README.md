@@ -6,9 +6,11 @@ Flash is a fast, extensible, and hackable toolkit for working with POSIX-style s
 
 > Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but engineered from the ground up with performance and extensibility in mind.
 
-## Motivation
+## Summary
 
-Flash was created to serve two main purposes: as a learning project to better understand shell parsing and syntax, and as a tool for testing and embedding within the [Rio terminal emulator](https://github.com/raphamorim/rio/), a GPU-accelerated terminal written in Rust.
+- [Feature Coverage](#feature-coverage)
+- [Flash as shell](#as-shell)
+- [Flash as library or shell backend](#as-library)
 
 ## TODO
 
@@ -74,9 +76,19 @@ Legends:
 |                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ❌  | |
 |                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ❌  | `source` is Bash synonym |
 
-## Install as your shell
+## As shell
+
+At its base, a shell is simply a macro processor that executes commands. The term macro processor means functionality where text and symbols are expanded to create larger expressions. 
+
+A Unix shell is both a command interpreter and a programming language. As a command interpreter, the shell provides the user interface to the rich set of GNU utilities. The programming language features allow these utilities to be combined. Files containing commands can be created, and become commands themselves. These new commands have the same status as system commands in directories such as /bin, allowing users or groups to establish custom environments to automate their common tasks.
+
+Shells may be used interactively or non-interactively. In interactive mode, they accept input typed from the keyboard. When executing non-interactively, shells execute commands read from a file.
+
+Flash is largely compatible with sh and bash.
 
 > ⚠️ Flash is still under development. Use it with caution in production environments.
+
+#### Installing it
 
 Option 1:
 
@@ -125,7 +137,9 @@ chsh -s /usr/local/bin/flash
 
 --
 
-## 🔌 Embed in Your Rust Project
+## As library
+
+Flash can also be used a rust library that can help different purposes: testing purposes, parsing sh/bash, as a backend for your own shell, formatting sh/bash code, and other stuff.
 
 #### As an Interpreter
 
