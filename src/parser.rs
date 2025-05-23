@@ -1117,6 +1117,36 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_simple_assignment() {
+        let input = "value=123";
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 1);
+                assert_eq!(operators.len(), 0);
+
+                match &statements[0] {
+                    Node::Assignment { name, value } => {
+                        assert_eq!(name, "value");
+                        match &**value {
+                            Node::StringLiteral(val) => {
+                                assert_eq!(val, "123");
+                            }
+                            _ => panic!("Expected StringLiteral node for value"),
+                        }
+                    }
+                    _ => panic!("Expected Assignment node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
     fn test_command_with_redirects() {
         let input = "cat file.txt > output.txt";
         let result = parse_test(input);
