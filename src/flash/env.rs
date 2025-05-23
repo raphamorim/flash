@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 // use std::ffi::CStr;
 // use std::os::raw::c_char;
-use std::{io, fs};
+use std::{fs, io};
 
 pub fn load_env_from_proc() -> io::Result<HashMap<String, String>> {
     let mut variables = HashMap::new();
-    
+
     // Read from /proc/self/environ (Linux/Unix only)
     let environ_data = fs::read("/proc/self/environ")?;
-    
+
     // Split by null bytes and parse key=value pairs
     for env_pair in environ_data.split(|&b| b == 0) {
         if let Ok(env_str) = std::str::from_utf8(env_pair) {
@@ -17,7 +17,7 @@ pub fn load_env_from_proc() -> io::Result<HashMap<String, String>> {
             }
         }
     }
-    
+
     Ok(variables)
 }
 
@@ -34,7 +34,7 @@ pub fn load_env_from_proc() -> io::Result<HashMap<String, String>> {
 
 // pub fn load_env() -> HashMap<String, String> {
 //     let mut variables = HashMap::new();
-    
+
 //     #[cfg(not(target_os = "windows"))]
 //     {
 //         unsafe {
@@ -50,7 +50,7 @@ pub fn load_env_from_proc() -> io::Result<HashMap<String, String>> {
 //             }
 //         }
 //     }
-    
+
 //     #[cfg(target_os = "windows")]
 //     {
 //         unsafe {
@@ -63,19 +63,19 @@ pub fn load_env_from_proc() -> io::Result<HashMap<String, String>> {
 //                     if bytes.is_empty() {
 //                         break;
 //                     }
-                    
+
 //                     if let Ok(env_str) = std::str::from_utf8(bytes) {
 //                         if let Some((key, value)) = env_str.split_once('=') {
 //                             variables.insert(key.to_string(), value.to_string());
 //                         }
 //                     }
-                    
+
 //                     current = current.add(bytes.len() + 1);
 //                 }
 //                 FreeEnvironmentStringsA(env_block);
 //             }
 //         }
 //     }
-    
+
 //     variables
 // }

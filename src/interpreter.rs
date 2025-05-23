@@ -4,18 +4,18 @@ use crate::parser::Node;
 use crate::parser::Parser;
 use crate::parser::Redirect;
 use crate::parser::RedirectKind;
+
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use termios::{ECHO, ICANON, TCSANOW, Termios, VMIN, VTIME, tcsetattr};
 
-// Evaluation trait definition
 pub trait Evaluator {
     fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error>;
 }
@@ -273,6 +273,7 @@ pub struct Interpreter {
     pub last_exit_code: i32,
     pub history: Vec<String>,
     pub history_file: Option<String>,
+    pub rc_file: Option<String>,
 }
 
 impl Default for Interpreter {
@@ -287,14 +288,9 @@ impl Interpreter {
         let mut variables = HashMap::default();
 
         if let Ok(variables_from_proc) = flash::env::load_env_from_proc() {
-            for (key, value)  in variables_from_proc.iter() {
+            for (key, value) in variables_from_proc.iter() {
                 variables.insert(key.to_owned(), value.to_owned());
             }
-        }
-
-        // Load configuration from ~/.flashrc
-        if let Err(e) = load_flashrc(&mut variables) {
-            eprintln!("Warning: Failed to load ~/.flashrc: {}", e);
         }
 
         // Set up some shell variables
@@ -302,9 +298,13 @@ impl Interpreter {
         variables.insert("SHELL".to_string(), "flash".to_string());
         variables.insert("$$".to_string(), std::process::id().to_string());
 
-        let history_file = env::var("HOME")
-            .map(|home| format!("{}/.shell_history", home))
-            .ok();
+        let home_dir = env::var("HOME").ok();
+
+        let history_file = home_dir
+            .as_ref()
+            .map(|home| format!("{}/.flash_history", home));
+
+        let rc_file = home_dir.as_ref().map(|home| format!("{}/.flashrc", home));
 
         // Load history from file if it exists
         let mut history = Vec::new();
@@ -317,12 +317,59 @@ impl Interpreter {
             }
         }
 
-        Self {
+        let mut interpreter = Self {
             variables,
             last_exit_code: 0,
             history,
             history_file,
+            rc_file,
+        };
+
+        // Load and execute flashrc file if it exists
+        if let Err(e) = interpreter.load_rc_file() {
+            eprintln!("Warning: Error loading flashrc: {}", e);
         }
+
+        interpreter
+    }
+
+    /// Load and execute the flashrc file
+    fn load_rc_file(&mut self) -> io::Result<()> {
+        if let Some(ref rc_path) = self.rc_file.clone() {
+            if Path::new(rc_path).exists() {
+                match fs::read_to_string(rc_path) {
+                    Ok(content) => {
+                        // Execute the rc file content
+                        // We ignore errors in rc file execution to prevent shell startup failure
+                        if let Err(e) = self.execute(&content) {
+                            eprintln!("Warning: Error executing flashrc: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Failed to read flashrc file {}: {}", rc_path, e),
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Reload the flashrc file (useful for testing changes without restarting)
+    pub fn reload_rc_file(&mut self) -> io::Result<()> {
+        self.load_rc_file()
+    }
+
+    /// Get the path to the flashrc file
+    pub fn get_rc_file_path(&self) -> Option<String> {
+        self.rc_file.clone()
+    }
+
+    /// Set a custom rc file path
+    pub fn set_rc_file_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.rc_file = Some(path.as_ref().to_string_lossy().to_string());
     }
 
     fn save_history(&self) -> io::Result<()> {
