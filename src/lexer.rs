@@ -42,6 +42,7 @@ pub enum TokenKind {
     Break,    // break keyword
     Continue, // continue keyword
     Return,   // return keyword (for functions)
+    Export,   // export keyword
     EOF,
 }
 
@@ -367,7 +368,7 @@ impl Lexer {
                 }
             }
             'e' => {
-                // Check for "else" or "elif" keywords
+                // Check for "else", "elif", or "export" keywords
                 if self.peek_char() == 'l' && self.position + 3 < self.input.len() {
                     self.read_char(); // 'l'
 
@@ -428,6 +429,34 @@ impl Lexer {
                         self.position -= 1;
                         self.read_position -= 1;
                         self.column -= 1;
+                        self.ch = 'e';
+                        self.read_word()
+                    }
+                } else if self.position + 5 < self.input.len()
+                    && self.peek_char() == 'x'
+                    && self.input[self.position + 1] == 'x'
+                    && self.input[self.position + 2] == 'p'
+                    && self.input[self.position + 3] == 'o'
+                    && self.input[self.position + 4] == 'r'
+                    && self.input[self.position + 5] == 't'
+                {
+                    self.read_char(); // 'x'
+                    self.read_char(); // 'p'
+                    self.read_char(); // 'o'
+                    self.read_char(); // 'r'
+                    self.read_char(); // 't'
+
+                    if self.is_word_boundary() {
+                        Token {
+                            kind: TokenKind::Export,
+                            value: "export".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Not a standalone "export", backtrack
+                        self.position -= 5;
+                        self.read_position -= 5;
+                        self.column -= 5;
                         self.ch = 'e';
                         self.read_word()
                     }
@@ -867,6 +896,7 @@ impl Lexer {
             "break" => TokenKind::Break,
             "continue" => TokenKind::Continue,
             "return" => TokenKind::Return,
+            "export" => TokenKind::Export,
             _ => TokenKind::Word(word.clone()),
         };
 
@@ -939,6 +969,7 @@ impl Lexer {
 
 #[cfg(test)]
 mod lexer_tests {
+    use crate::lexer::Token;
     use crate::lexer::Lexer;
     use crate::lexer::TokenKind;
 
@@ -954,6 +985,22 @@ mod lexer_tests {
             println!("Token: {:?}", token);
             token = lexer.next_token();
         }
+    }
+
+    fn collect_tokens(input: &str) -> Vec<Token> {
+        let mut lexer = Lexer::new(input);
+        let mut tokens = Vec::new();
+        
+        loop {
+            let token = lexer.next_token();
+            let is_eof = matches!(token.kind, TokenKind::EOF);
+            tokens.push(token);
+            if is_eof {
+                break;
+            }
+        }
+        
+        tokens
     }
 
     fn test_tokens(input: &str, expected_tokens: Vec<TokenKind>) {
@@ -1869,5 +1916,87 @@ mod lexer_tests {
             TokenKind::RParen,
         ];
         test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_export_keyword() {
+        let tokens = collect_tokens("export");
+        assert_eq!(tokens.len(), 2); // export + EOF
+        assert!(matches!(tokens[0].kind, TokenKind::Export));
+        assert_eq!(tokens[0].value, "export");
+    }
+
+    #[test]
+    fn test_export_assignment() {
+        let tokens = collect_tokens("export VAR=value");
+        let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+        
+        assert_eq!(kinds.len(), 5); // export + VAR + = + value + EOF
+        assert!(matches!(kinds[0], TokenKind::Export));
+        assert!(matches!(kinds[1], TokenKind::Word(_)));
+        assert!(matches!(kinds[2], TokenKind::Assignment));
+        assert!(matches!(kinds[3], TokenKind::Word(_)));
+        assert!(matches!(kinds[4], TokenKind::EOF));
+        
+        assert_eq!(tokens[0].value, "export");
+        assert_eq!(tokens[1].value, "VAR");
+        assert_eq!(tokens[2].value, "=");
+        assert_eq!(tokens[3].value, "value");
+    }
+
+    #[test]
+    fn test_export_with_quotes() {
+        let tokens = collect_tokens("export PATH=\"/usr/bin:/bin\"");
+        let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+        
+        assert!(matches!(kinds[0], TokenKind::Export));
+        assert!(matches!(kinds[1], TokenKind::Word(_)));
+        assert!(matches!(kinds[2], TokenKind::Assignment));
+        assert!(matches!(kinds[3], TokenKind::Quote));
+        assert!(matches!(kinds[4], TokenKind::Word(_)));
+        assert!(matches!(kinds[5], TokenKind::Quote));
+        
+        assert_eq!(tokens[0].value, "export");
+        assert_eq!(tokens[1].value, "PATH");
+        assert_eq!(tokens[4].value, "/usr/bin:/bin");
+    }
+
+    #[test]
+    fn test_export_multiple_variables() {
+        let tokens = collect_tokens("export VAR1=val1 VAR2=val2");
+        let export_count = tokens.iter().filter(|t| matches!(t.kind, TokenKind::Export)).count();
+        assert_eq!(export_count, 1); // Only one export keyword
+        
+        let var_count = tokens.iter().filter(|t| matches!(t.kind, TokenKind::Word(_))).count();
+        assert_eq!(var_count, 4); // VAR1, val1, VAR2, val2
+    }
+
+    #[test]
+    fn test_export_not_keyword_when_part_of_word() {
+        let tokens = collect_tokens("exported");
+        assert_eq!(tokens.len(), 2); // word + EOF
+        assert!(matches!(tokens[0].kind, TokenKind::Word(_)));
+        assert_eq!(tokens[0].value, "exported");
+        
+        let tokens2 = collect_tokens("exportable");
+        assert!(matches!(tokens2[0].kind, TokenKind::Word(_)));
+        assert_eq!(tokens2[0].value, "exportable");
+    }
+
+    #[test]
+    fn test_export_with_newline() {
+        let tokens = collect_tokens("export VAR=value\necho $VAR");
+        let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+        
+        assert!(matches!(kinds[0], TokenKind::Export));
+        assert!(matches!(kinds[4], TokenKind::Newline)); // After value
+        assert!(matches!(kinds[5], TokenKind::Word(_))); // echo
+    }
+
+    #[test]
+    fn test_export_with_semicolon() {
+        let tokens = collect_tokens("export VAR=value; echo done");
+        let semicolon_pos = tokens.iter().position(|t| matches!(t.kind, TokenKind::Semicolon));
+        assert!(semicolon_pos.is_some());
     }
 }
