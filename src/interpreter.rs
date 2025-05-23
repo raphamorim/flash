@@ -48,6 +48,7 @@ impl Evaluator for DefaultEvaluator {
                 patterns,
                 suffix,
             } => self.evaluate_ext_glob(*operator, patterns, suffix, interpreter),
+            Node::Export { name, value } => self.evaluate_export(name, value, interpreter),
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
@@ -167,6 +168,85 @@ impl DefaultEvaluator {
         }
     }
 
+    fn evaluate_export(
+        &mut self,
+        name: &str,
+        value: &Option<Box<Node>>,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        match value {
+            Some(val) => {
+                // Export with assignment: export VAR=value
+                match val.as_ref() {
+                    Node::StringLiteral(string_value) => {
+                        let expanded_value = interpreter.expand_variables(string_value);
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), expanded_value.clone());
+                        unsafe {
+                            env::set_var(name, &expanded_value);
+                        }
+                    }
+                    Node::CommandSubstitution { command } => {
+                        let output = interpreter.capture_command_output(command, self)?;
+                        let trimmed_output = output.trim_end().to_string();
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), trimmed_output.clone());
+                        unsafe {
+                            env::set_var(name, &trimmed_output);
+                        }
+                    }
+                    Node::Array { elements } => {
+                        // Handle array export - join elements with spaces or use a specific format
+                        let array_value = elements.join(" ");
+                        let expanded_value = interpreter.expand_variables(&array_value);
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), expanded_value.clone());
+                        unsafe {
+                            env::set_var(name, &expanded_value);
+                        }
+                    }
+                    _ => {
+                        return Err(io::Error::other(
+                            "Unsupported value type for export assignment",
+                        ));
+                    }
+                }
+            }
+            None => {
+                // Export without assignment: export VAR
+                // Export existing variable if it exists in the interpreter's variables
+                if let Some(existing_value) = interpreter.variables.get(name) {
+                    unsafe {
+                        env::set_var(name, existing_value);
+                    }
+                } else {
+                    // If variable doesn't exist in interpreter, check if it exists in environment
+                    if let Ok(env_value) = env::var(name) {
+                        // Store it in interpreter variables for consistency
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), env_value.clone());
+                        unsafe {
+                            env::set_var(name, &env_value);
+                        }
+                    } else {
+                        // Variable doesn't exist anywhere, export with empty value
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), String::new());
+                        unsafe {
+                            env::set_var(name, "");
+                        }
+                    }
+                }
+            }
+        }
+        Ok(0)
+    }
+
     fn evaluate_pipeline(
         &mut self,
         commands: &[Node],
@@ -234,6 +314,14 @@ impl DefaultEvaluator {
             Node::CommandSubstitution { command } => {
                 let output = interpreter.capture_command_output(command, self)?;
                 interpreter.variables.insert(name.to_string(), output);
+            }
+            Node::Array { elements } => {
+                // Handle array assignment - join elements or store in a specific format
+                let array_value = elements.join(" ");
+                let expanded_value = interpreter.expand_variables(&array_value);
+                interpreter
+                    .variables
+                    .insert(name.to_string(), expanded_value);
             }
             _ => {
                 return Err(io::Error::other("Unsupported value type for assignment"));

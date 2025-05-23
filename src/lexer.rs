@@ -969,8 +969,8 @@ impl Lexer {
 
 #[cfg(test)]
 mod lexer_tests {
-    use crate::lexer::Token;
     use crate::lexer::Lexer;
+    use crate::lexer::Token;
     use crate::lexer::TokenKind;
 
     #[test]
@@ -990,7 +990,7 @@ mod lexer_tests {
     fn collect_tokens(input: &str) -> Vec<Token> {
         let mut lexer = Lexer::new(input);
         let mut tokens = Vec::new();
-        
+
         loop {
             let token = lexer.next_token();
             let is_eof = matches!(token.kind, TokenKind::EOF);
@@ -999,7 +999,7 @@ mod lexer_tests {
                 break;
             }
         }
-        
+
         tokens
     }
 
@@ -1930,14 +1930,14 @@ mod lexer_tests {
     fn test_export_assignment() {
         let tokens = collect_tokens("export VAR=value");
         let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
-        
+
         assert_eq!(kinds.len(), 5); // export + VAR + = + value + EOF
         assert!(matches!(kinds[0], TokenKind::Export));
         assert!(matches!(kinds[1], TokenKind::Word(_)));
         assert!(matches!(kinds[2], TokenKind::Assignment));
         assert!(matches!(kinds[3], TokenKind::Word(_)));
         assert!(matches!(kinds[4], TokenKind::EOF));
-        
+
         assert_eq!(tokens[0].value, "export");
         assert_eq!(tokens[1].value, "VAR");
         assert_eq!(tokens[2].value, "=");
@@ -1948,14 +1948,14 @@ mod lexer_tests {
     fn test_export_with_quotes() {
         let tokens = collect_tokens("export PATH=\"/usr/bin:/bin\"");
         let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
-        
+
         assert!(matches!(kinds[0], TokenKind::Export));
         assert!(matches!(kinds[1], TokenKind::Word(_)));
         assert!(matches!(kinds[2], TokenKind::Assignment));
         assert!(matches!(kinds[3], TokenKind::Quote));
         assert!(matches!(kinds[4], TokenKind::Word(_)));
         assert!(matches!(kinds[5], TokenKind::Quote));
-        
+
         assert_eq!(tokens[0].value, "export");
         assert_eq!(tokens[1].value, "PATH");
         assert_eq!(tokens[4].value, "/usr/bin:/bin");
@@ -1964,10 +1964,16 @@ mod lexer_tests {
     #[test]
     fn test_export_multiple_variables() {
         let tokens = collect_tokens("export VAR1=val1 VAR2=val2");
-        let export_count = tokens.iter().filter(|t| matches!(t.kind, TokenKind::Export)).count();
+        let export_count = tokens
+            .iter()
+            .filter(|t| matches!(t.kind, TokenKind::Export))
+            .count();
         assert_eq!(export_count, 1); // Only one export keyword
-        
-        let var_count = tokens.iter().filter(|t| matches!(t.kind, TokenKind::Word(_))).count();
+
+        let var_count = tokens
+            .iter()
+            .filter(|t| matches!(t.kind, TokenKind::Word(_)))
+            .count();
         assert_eq!(var_count, 4); // VAR1, val1, VAR2, val2
     }
 
@@ -1977,7 +1983,7 @@ mod lexer_tests {
         assert_eq!(tokens.len(), 2); // word + EOF
         assert!(matches!(tokens[0].kind, TokenKind::Word(_)));
         assert_eq!(tokens[0].value, "exported");
-        
+
         let tokens2 = collect_tokens("exportable");
         assert!(matches!(tokens2[0].kind, TokenKind::Word(_)));
         assert_eq!(tokens2[0].value, "exportable");
@@ -1987,7 +1993,7 @@ mod lexer_tests {
     fn test_export_with_newline() {
         let tokens = collect_tokens("export VAR=value\necho $VAR");
         let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
-        
+
         assert!(matches!(kinds[0], TokenKind::Export));
         assert!(matches!(kinds[4], TokenKind::Newline)); // After value
         assert!(matches!(kinds[5], TokenKind::Word(_))); // echo
@@ -1996,7 +2002,9 @@ mod lexer_tests {
     #[test]
     fn test_export_with_semicolon() {
         let tokens = collect_tokens("export VAR=value; echo done");
-        let semicolon_pos = tokens.iter().position(|t| matches!(t.kind, TokenKind::Semicolon));
+        let semicolon_pos = tokens
+            .iter()
+            .position(|t| matches!(t.kind, TokenKind::Semicolon));
         assert!(semicolon_pos.is_some());
     }
 }

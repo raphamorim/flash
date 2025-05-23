@@ -59,6 +59,10 @@ pub enum Node {
         args: Vec<String>,
         redirects: Vec<Redirect>,
     },
+    Export {
+        name: String,
+        value: Option<Box<Node>>, // None for export without assignment (export VAR)
+    },
 }
 
 /// Redirection types
@@ -208,6 +212,11 @@ impl Parser {
                     return Some(self.parse_assignment());
                 }
 
+                // Check for export statement
+                if word == "export" {
+                    return Some(self.parse_export());
+                }
+
                 let command_node = self.parse_command();
                 Some(command_node)
             }
@@ -221,8 +230,126 @@ impl Parser {
                 Some(Node::Comment(comment))
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
+            TokenKind::Export => Some(self.parse_export()),
             _ => None,
         }
+    }
+
+    // Parse export statement: export VAR=value or export VAR
+    fn parse_export(&mut self) -> Node {
+        self.next_token(); // Skip 'export' keyword
+
+        // Get variable name
+        let name = match &self.current_token.kind {
+            TokenKind::Word(word) => word.clone(),
+            _ => {
+                // Handle error case - return empty export
+                return Node::Export {
+                    name: String::new(),
+                    value: None,
+                };
+            }
+        };
+
+        self.next_token(); // Skip variable name
+
+        // Check if there's an assignment
+        if self.current_token.kind == TokenKind::Assignment {
+            self.next_token(); // Skip '='
+
+            // Check for array assignment like export arch=('x86_64')
+            if self.current_token.kind == TokenKind::LParen {
+                let array_value = self.parse_array_value();
+                return Node::Export {
+                    name,
+                    value: Some(Box::new(array_value)),
+                };
+            }
+
+            // Parse the value (similar to regular assignment)
+            let value = self.parse_assignment_value();
+            Node::Export {
+                name,
+                value: Some(Box::new(value)),
+            }
+        } else {
+            // Export without assignment (export VAR)
+            Node::Export { name, value: None }
+        }
+    }
+
+    // Helper method to parse assignment values (extracted from parse_assignment)
+    fn parse_assignment_value(&mut self) -> Node {
+        match self.current_token.kind {
+            TokenKind::Quote => self.parse_quoted_string(TokenKind::Quote),
+            TokenKind::SingleQuote => self.parse_quoted_string(TokenKind::SingleQuote),
+            TokenKind::CmdSubst => self.parse_command_substitution(),
+            TokenKind::Word(ref word) => {
+                let value = word.clone();
+                self.next_token();
+                Node::StringLiteral(value)
+            }
+            _ => Node::StringLiteral(String::new()),
+        }
+    }
+
+    // Helper method to parse array values
+    fn parse_array_value(&mut self) -> Node {
+        self.next_token(); // Skip '('
+
+        let mut array_elements = Vec::new();
+
+        while self.current_token.kind != TokenKind::RParen
+            && self.current_token.kind != TokenKind::EOF
+        {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    array_elements.push(word.clone());
+                    self.next_token();
+                }
+                TokenKind::SingleQuote | TokenKind::Quote => {
+                    let quote_type = self.current_token.kind.clone();
+                    let quoted_value = self.parse_quoted_string_value(quote_type);
+                    array_elements.push(quoted_value);
+                }
+                _ => {
+                    self.next_token();
+                }
+            }
+        }
+
+        if self.current_token.kind == TokenKind::RParen {
+            self.next_token();
+        }
+
+        Node::Array {
+            elements: array_elements,
+        }
+    }
+
+    // Helper method to parse quoted strings
+    fn parse_quoted_string(&mut self, quote_type: TokenKind) -> Node {
+        let quoted_value = self.parse_quoted_string_value(quote_type);
+        Node::StringLiteral(quoted_value)
+    }
+
+    // Helper method to get the string value from quoted content
+    fn parse_quoted_string_value(&mut self, quote_type: TokenKind) -> String {
+        self.next_token(); // Skip opening quote
+
+        let mut quoted_value = String::new();
+        while self.current_token.kind != quote_type && self.current_token.kind != TokenKind::EOF {
+            if let TokenKind::Word(word) = &self.current_token.kind {
+                quoted_value.push_str(word);
+            }
+            self.next_token();
+        }
+
+        if self.current_token.kind == quote_type {
+            self.next_token(); // Skip closing quote
+        }
+
+        quoted_value
     }
 
     // Parse if statement
@@ -3914,6 +4041,351 @@ fi
                 assert_eq!(statements.len(), 2); // array assignment + echo command
             }
             _ => panic!("Expected Node::List, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_export_without_assignment() {
+        let input = "export PATH";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "PATH");
+                assert!(value.is_none());
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_string_assignment() {
+        let input = "export PATH=/usr/bin";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "PATH");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::StringLiteral(val) => assert_eq!(val, "/usr/bin"),
+                    _ => panic!("Expected StringLiteral value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_quoted_string() {
+        let input = r#"export MESSAGE="Hello World""#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "MESSAGE");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::StringLiteral(val) => assert_eq!(val, "Hello World"),
+                    _ => panic!("Expected StringLiteral value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_single_quoted_string() {
+        let input = "export MESSAGE='Hello World'";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "MESSAGE");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::StringLiteral(val) => assert_eq!(val, "Hello World"),
+                    _ => panic!("Expected StringLiteral value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_array_assignment() {
+        let input = "export arch=('x86_64')";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "arch");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 1);
+                        assert_eq!(elements[0], "x86_64");
+                    }
+                    _ => panic!("Expected Array value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_multi_element_array() {
+        let input = "export LANGS=('rust' 'python' 'javascript')";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "LANGS");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "rust");
+                        assert_eq!(elements[1], "python");
+                        assert_eq!(elements[2], "javascript");
+                    }
+                    _ => panic!("Expected Array value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_quoted_array_elements() {
+        let input = r#"export PATHS=("/usr/bin" "/usr/local/bin")"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "PATHS");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 2);
+                        assert_eq!(elements[0], "/usr/bin");
+                        assert_eq!(elements[1], "/usr/local/bin");
+                    }
+                    _ => panic!("Expected Array value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_command_substitution() {
+        let input = "export DATE=$(date)";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "DATE");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::CommandSubstitution { command } => match *command {
+                        Node::Command { name, args, .. } => {
+                            assert_eq!(name, "date");
+                            assert!(args.is_empty());
+                        }
+                        _ => panic!("Expected Command inside CommandSubstitution"),
+                    },
+                    _ => panic!("Expected CommandSubstitution value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_empty_array() {
+        let input = "export EMPTY=()";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "EMPTY");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 0);
+                    }
+                    _ => panic!("Expected Array value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_mixed_quoted_unquoted_array() {
+        let input = r#"export MIXED=(unquoted "double quoted" 'single quoted')"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "MIXED");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::Array { elements } => {
+                        assert_eq!(elements.len(), 3);
+                        assert_eq!(elements[0], "unquoted");
+                        assert_eq!(elements[1], "double quoted");
+                        assert_eq!(elements[2], "single quoted");
+                    }
+                    _ => panic!("Expected Array value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_with_empty_value() {
+        let input = "export EMPTY=";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "EMPTY");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::StringLiteral(val) => assert_eq!(val, ""),
+                    _ => panic!("Expected StringLiteral value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_export_keyword_detection() {
+        // Test that "export" is detected as a keyword when it starts a statement
+        let input = "export VAR=value";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { .. } => {
+                // Success - export was properly detected
+            }
+            _ => panic!("Expected Export node, export keyword not detected"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_exports_in_script() {
+        let input = "export VAR1=value1\nexport VAR2=value2";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_script();
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 2);
+
+                // Check first export
+                match &statements[0] {
+                    Node::Export { name, value } => {
+                        assert_eq!(name, "VAR1");
+                        if let Some(val) = value {
+                            match **val {
+                                Node::StringLiteral(ref s) => assert_eq!(s, "value1"),
+                                _ => panic!("Expected StringLiteral"),
+                            }
+                        }
+                    }
+                    _ => panic!("Expected Export node"),
+                }
+
+                // Check second export
+                match &statements[1] {
+                    Node::Export { name, value } => {
+                        assert_eq!(name, "VAR2");
+                        if let Some(val) = value {
+                            match **val {
+                                Node::StringLiteral(ref s) => assert_eq!(s, "value2"),
+                                _ => panic!("Expected StringLiteral"),
+                            }
+                        }
+                    }
+                    _ => panic!("Expected Export node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_export_with_special_characters_in_value() {
+        let input = r#"export SPECIAL="path/with-dashes_and.dots""#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let result = parser.parse_statement().unwrap();
+
+        match result {
+            Node::Export { name, value } => {
+                assert_eq!(name, "SPECIAL");
+                assert!(value.is_some());
+
+                match *value.unwrap() {
+                    Node::StringLiteral(val) => assert_eq!(val, "path/with-dashes_and.dots"),
+                    _ => panic!("Expected StringLiteral value"),
+                }
+            }
+            _ => panic!("Expected Export node, got {:?}", result),
         }
     }
 }
