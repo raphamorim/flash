@@ -202,8 +202,19 @@ impl Lexer {
             self.read_char();
             return token;
         } else if self.in_quotes.is_some() {
-            // We're inside quotes, collect everything until the closing quote as a single word
-            return self.read_quoted_content();
+            // We're inside quotes, but check for command substitution first
+            if self.ch == '$' && self.peek_char() == '(' {
+                // Handle command substitution even inside quotes
+                self.read_char(); // Consume the '('
+                return Token {
+                    kind: TokenKind::CmdSubst,
+                    value: "$(".to_string(),
+                    position: current_position,
+                };
+            } else {
+                // Regular quoted content
+                return self.read_quoted_content();
+            }
         }
 
         let token = match self.ch {
@@ -774,8 +785,8 @@ impl Lexer {
                         self.read_word()
                     }
                 } else if self.position + 1 < self.input.len() &&
-                // check in
-               self.peek_char() == 'n'
+            // check in
+           self.peek_char() == 'n'
                 {
                     self.read_char(); // 'n'
 
@@ -1268,6 +1279,36 @@ mod lexer_tests {
             TokenKind::CmdSubst,
             TokenKind::Word("ls".to_string()),
             TokenKind::Word("-l".to_string()),
+            TokenKind::RParen,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_command_substitution_on_variable() {
+        let input = "NUMBER=$(echo 85)";
+        let expected = vec![
+            TokenKind::Word("NUMBER".to_string()),
+            TokenKind::Assignment,
+            TokenKind::CmdSubst,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("85".to_string()),
+            TokenKind::RParen,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_command_substitution_on_variable_with_quotes() {
+        let input = "NUMBER=\"$(echo 85)\"";
+        let expected = vec![
+            TokenKind::Word("NUMBER".to_string()),
+            TokenKind::Assignment,
+            TokenKind::Quote,
+            TokenKind::CmdSubst,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("85".to_string()),
+            TokenKind::Quote,
             TokenKind::RParen,
         ];
         test_tokens(input, expected);
@@ -1998,6 +2039,16 @@ mod lexer_tests {
         assert!(matches!(kinds[4], TokenKind::Newline)); // After value
         assert!(matches!(kinds[5], TokenKind::Word(_))); // echo
     }
+
+    // #[test]
+    // fn test_export_with_variable() {
+    //     let tokens = collect_tokens("export PATH=\"$PATH\":");
+    //     let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+
+    //     assert!(matches!(kinds[0], TokenKind::Export));
+    //     assert!(matches!(kinds[4], TokenKind::Newline)); // After value
+    //     assert!(matches!(kinds[5], TokenKind::Word(_))); // echo
+    // }
 
     #[test]
     fn test_export_with_semicolon() {
