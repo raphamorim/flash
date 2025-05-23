@@ -99,7 +99,7 @@ sudo cp target/release/flash /usr/local/bin/
 flash
 ```
 
-## Set as default
+#### Set as default
 
 Optionally you can also set as default
 
@@ -113,6 +113,8 @@ chsh -s /bin/flash
 # MacOS/BSD:
 chsh -s /usr/local/bin/flash
 ```
+
+--
 
 ## 🔌 Embed in Your Rust Project
 
