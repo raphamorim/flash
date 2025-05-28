@@ -1322,6 +1322,22 @@ mod lexer_tests {
     }
 
     #[test]
+    fn test_equal_sign_not_as_assignment() {
+        let input = "./configure --target=something";
+        let expected = vec![
+            TokenKind::Word("./configure".to_string()),
+            TokenKind::Word("--target=something".to_string()),
+            TokenKind::Quote,
+            TokenKind::CmdSubst,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("85".to_string()),
+            TokenKind::Quote,
+            TokenKind::RParen,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
     fn test_variable_expansion() {
         let input = "echo $HOME";
         let expected = vec![
