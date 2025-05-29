@@ -105,6 +105,7 @@ pub struct Lexer {
     line: usize,
     column: usize,
     in_quotes: Option<char>,
+    quote_after_cmdsubst: Option<char>,
 }
 
 impl Lexer {
@@ -117,6 +118,7 @@ impl Lexer {
             line: 1,
             column: 0,
             in_quotes: None,
+            quote_after_cmdsubst: None,
         };
         lexer.read_char();
         lexer
@@ -212,7 +214,11 @@ impl Lexer {
             // We're inside quotes, but check for command substitution first
             if self.ch == '$' && self.peek_char() == '(' {
                 // Handle command substitution even inside quotes
+                // Save the quote state and temporarily exit quote mode
+                self.quote_after_cmdsubst = self.in_quotes;
+                self.in_quotes = None;
                 self.read_char(); // Consume the '('
+                self.read_char(); // Advance to the next character (like the end of method does)
                 return Token {
                     kind: TokenKind::CmdSubst,
                     value: "$(".to_string(),
@@ -281,11 +287,18 @@ impl Lexer {
                 value: "(".to_string(),
                 position: current_position,
             },
-            ')' => Token {
-                kind: TokenKind::RParen,
-                value: ")".to_string(),
-                position: current_position,
-            },
+            ')' => {
+                // Check if we need to restore quote state after command substitution
+                if let Some(quote_char) = self.quote_after_cmdsubst {
+                    self.in_quotes = Some(quote_char);
+                    self.quote_after_cmdsubst = None;
+                }
+                Token {
+                    kind: TokenKind::RParen,
+                    value: ")".to_string(),
+                    position: current_position,
+                }
+            }
             '{' => Token {
                 kind: TokenKind::LBrace,
                 value: "{".to_string(),
@@ -1328,8 +1341,8 @@ mod lexer_tests {
             TokenKind::CmdSubst,
             TokenKind::Word("echo".to_string()),
             TokenKind::Word("85".to_string()),
-            TokenKind::Quote,
             TokenKind::RParen,
+            TokenKind::Quote,
         ];
         test_tokens(input, expected);
     }
