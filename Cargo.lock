@@ -50,6 +50,7 @@ name = "flash"
 version = "0.0.2"
 dependencies = [
  "glob",
+ "libc",
  "os_pipe",
  "pretty_assertions",
  "regex",

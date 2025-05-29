@@ -94,25 +94,38 @@ impl DefaultEvaluator {
             }
             "echo" => {
                 for (i, arg) in args.iter().enumerate() {
-                    print!("{}{}", if i > 0 { " " } else { "" }, arg);
+                    let expanded_arg = interpreter.expand_variables(arg);
+                    print!("{}{}", if i > 0 { " " } else { "" }, expanded_arg);
                 }
                 println!();
                 Ok(0)
             }
             "export" => {
+                if args.is_empty() {
+                    // List all exported variables
+                    for (key, value) in &interpreter.variables {
+                        println!("export {}={}", key, value);
+                    }
+                    return Ok(0);
+                }
+
                 for arg in args {
                     if let Some(pos) = arg.find('=') {
                         let (key, value) = arg.split_at(pos);
                         let value = &value[1..];
-                        interpreter
-                            .variables
-                            .insert(key.to_string(), value.to_string());
-                        unsafe {
-                            env::set_var(key, value);
+                        if !key.is_empty() {
+                            interpreter
+                                .variables
+                                .insert(key.to_string(), value.to_string());
+                            unsafe {
+                                env::set_var(key, value);
+                            }
                         }
                     } else if let Some(value) = interpreter.variables.get(arg) {
-                        unsafe {
-                            env::set_var(arg, value);
+                        if !arg.is_empty() {
+                            unsafe {
+                                env::set_var(arg, value);
+                            }
                         }
                     }
                 }
@@ -181,7 +194,6 @@ impl DefaultEvaluator {
         value: &Option<Box<Node>>,
         interpreter: &mut Interpreter,
     ) -> Result<i32, io::Error> {
-        println!("{:?} {:?}", name, value);
         match value {
             Some(val) => {
                 // Export with assignment: export VAR=value
@@ -191,8 +203,10 @@ impl DefaultEvaluator {
                         interpreter
                             .variables
                             .insert(name.to_string(), expanded_value.clone());
-                        unsafe {
-                            env::set_var(name, &expanded_value);
+                        if !name.is_empty() {
+                            unsafe {
+                                env::set_var(name, &expanded_value);
+                            }
                         }
                     }
                     Node::CommandSubstitution { command } => {
@@ -201,8 +215,10 @@ impl DefaultEvaluator {
                         interpreter
                             .variables
                             .insert(name.to_string(), trimmed_output.clone());
-                        unsafe {
-                            env::set_var(name, &trimmed_output);
+                        if !name.is_empty() {
+                            unsafe {
+                                env::set_var(name, &trimmed_output);
+                            }
                         }
                     }
                     Node::Array { elements } => {
@@ -212,8 +228,10 @@ impl DefaultEvaluator {
                         interpreter
                             .variables
                             .insert(name.to_string(), expanded_value.clone());
-                        unsafe {
-                            env::set_var(name, &expanded_value);
+                        if !name.is_empty() {
+                            unsafe {
+                                env::set_var(name, &expanded_value);
+                            }
                         }
                     }
                     _ => {
@@ -227,8 +245,10 @@ impl DefaultEvaluator {
                 // Export without assignment: export VAR
                 // Export existing variable if it exists in the interpreter's variables
                 if let Some(existing_value) = interpreter.variables.get(name) {
-                    unsafe {
-                        env::set_var(name, existing_value);
+                    if !name.is_empty() {
+                        unsafe {
+                            env::set_var(name, existing_value);
+                        }
                     }
                 } else {
                     // If variable doesn't exist in interpreter, check if it exists in environment
@@ -237,17 +257,17 @@ impl DefaultEvaluator {
                         interpreter
                             .variables
                             .insert(name.to_string(), env_value.clone());
-                        unsafe {
-                            env::set_var(name, &env_value);
+                        if !name.is_empty() {
+                            unsafe {
+                                env::set_var(name, &env_value);
+                            }
                         }
                     } else {
-                        // Variable doesn't exist anywhere, export with empty value
+                        // Variable doesn't exist anywhere, just add it to interpreter variables
+                        // Don't set empty environment variables as they can cause issues
                         interpreter
                             .variables
                             .insert(name.to_string(), String::new());
-                        unsafe {
-                            env::set_var(name, "");
-                        }
                     }
                 }
             }
@@ -386,6 +406,11 @@ impl Interpreter {
         if let Ok(variables_from_proc) = flash::env::load_env_from_proc() {
             for (key, value) in variables_from_proc.iter() {
                 variables.insert(key.to_owned(), value.to_owned());
+            }
+        } else {
+            // Fallback to std::env if /proc/self/environ is not available (e.g., on macOS)
+            for (key, value) in std::env::vars() {
+                variables.insert(key, value);
             }
         }
 
@@ -727,6 +752,30 @@ impl Interpreter {
         width.unwrap_or(80)
     }
 
+    /// Get the current prompt string, expanding variables
+    fn get_prompt(&self) -> String {
+        if let Some(prompt_template) = self.variables.get("PROMPT") {
+            // Simple variable expansion for the prompt
+            let mut result = prompt_template.clone();
+
+            // Replace $PWD with current directory
+            if let Ok(current_dir) = std::env::current_dir() {
+                let pwd = current_dir.to_string_lossy();
+                result = result.replace("$PWD", &pwd);
+            }
+
+            // Replace other common variables
+            for (key, value) in &self.variables {
+                let var_pattern = format!("${}", key);
+                result = result.replace(&var_pattern, value);
+            }
+
+            result
+        } else {
+            "$ ".to_string()
+        }
+    }
+
     // Interactive shell that accepts a custom evaluator
     pub fn run_interactive_with_evaluator<E: Evaluator>(
         &mut self,
@@ -735,6 +784,14 @@ impl Interpreter {
         let stdin = io::stdin();
         let mut stdout = io::stdout();
         let fd = stdin.as_raw_fd();
+
+        // Check if stdin is a terminal using isatty
+        if unsafe { libc::isatty(fd) } == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Interactive mode requires a terminal",
+            ));
+        }
 
         let original_termios = Termios::from_fd(fd)?;
         let mut raw_termios = original_termios;
@@ -746,10 +803,12 @@ impl Interpreter {
         let mut history_index = self.history.len();
 
         loop {
-            write!(stdout, "$ ")?;
+            let prompt = self.get_prompt();
+            write!(stdout, "{}", prompt)?;
             stdout.flush()?;
 
             let input = self.read_line_with_completion(
+                &prompt,
                 &original_termios,
                 &mut raw_termios,
                 &mut history_index,
@@ -798,6 +857,7 @@ impl Interpreter {
 
     fn read_line_with_completion(
         &self,
+        prompt: &str,
         original_termios: &Termios,
         raw_termios: &mut Termios,
         history_index: &mut usize,
@@ -848,7 +908,7 @@ impl Interpreter {
                             cursor_pos += suffix.len();
 
                             // Redraw the line with the completion
-                            write!(stdout, "\r$ {}", buffer)?;
+                            write!(stdout, "\r{}{}", prompt, buffer)?;
                             stdout.flush()?;
                         }
                         std::cmp::Ordering::Greater => {
@@ -860,20 +920,20 @@ impl Interpreter {
                                     cursor_pos += common_prefix.len();
 
                                     // Redraw the line with the partial completion
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     stdout.flush()?;
                                 } else {
                                     // No common prefix, show all completions (using full names for display)
                                     self.display_completions(&full_names)?;
                                     // Redraw the prompt and line
-                                    write!(stdout, "$ {}", buffer)?;
+                                    write!(stdout, "{}{}", prompt, buffer)?;
                                     stdout.flush()?;
                                 }
                             } else {
                                 // No common prefix found, show all completions (using full names for display)
                                 self.display_completions(&full_names)?;
                                 // Redraw the prompt and line
-                                write!(stdout, "$ {}", buffer)?;
+                                write!(stdout, "{}{}", prompt, buffer)?;
                                 stdout.flush()?;
                             }
                         }
@@ -884,9 +944,9 @@ impl Interpreter {
                     if cursor_pos > 0 {
                         buffer.remove(cursor_pos - 1);
                         cursor_pos -= 1;
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, " ")?; // Clear deleted character
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                 }
@@ -894,14 +954,14 @@ impl Interpreter {
                 // Ctrl-A (move to beginning of line)
                 1 => {
                     cursor_pos = 0;
-                    write!(stdout, "\r$ ")?;
+                    write!(stdout, "\r{}", prompt)?;
                     stdout.flush()?;
                 }
 
                 // Ctrl-E (move to end of line)
                 5 => {
                     cursor_pos = buffer.len();
-                    write!(stdout, "\r$ {}", buffer)?;
+                    write!(stdout, "\r{}{}", prompt, buffer)?;
                     stdout.flush()?;
                 }
 
@@ -909,7 +969,7 @@ impl Interpreter {
                 2 => {
                     if cursor_pos > 0 {
                         cursor_pos -= 1;
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -922,7 +982,7 @@ impl Interpreter {
                 6 => {
                     if cursor_pos < buffer.len() {
                         cursor_pos += 1;
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -941,9 +1001,9 @@ impl Interpreter {
                         buffer.truncate(cursor_pos);
 
                         // Redraw
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                 }
@@ -959,9 +1019,9 @@ impl Interpreter {
                         cursor_pos = 0;
 
                         // Redraw
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                 }
@@ -973,7 +1033,7 @@ impl Interpreter {
                         cursor_pos += kill_ring.len();
 
                         // Redraw
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -1010,9 +1070,9 @@ impl Interpreter {
                             cursor_pos = word_start;
 
                             // Redraw the line
-                            write!(stdout, "\r$ {}", buffer)?;
+                            write!(stdout, "\r{}{}", prompt, buffer)?;
                             write!(stdout, "                    ")?; // Clear any leftovers
-                            write!(stdout, "\r$ {}", buffer)?;
+                            write!(stdout, "\r{}{}", prompt, buffer)?;
                             stdout.flush()?;
                         }
                     }
@@ -1022,7 +1082,7 @@ impl Interpreter {
                 12 => {
                     // Clear the screen and redraw the prompt
                     write!(stdout, "\x1B[2J\x1B[H")?; // ANSI escape sequence to clear screen and move cursor to home
-                    write!(stdout, "$ {}", buffer)?;
+                    write!(stdout, "{}{}", prompt, buffer)?;
                     stdout.flush()?;
                 }
 
@@ -1032,9 +1092,9 @@ impl Interpreter {
                         *history_index -= 1;
                         buffer = self.history[*history_index].clone();
                         cursor_pos = buffer.len();
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                 }
@@ -1050,9 +1110,9 @@ impl Interpreter {
                             buffer = self.history[*history_index].clone();
                             cursor_pos = buffer.len();
                         }
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                 }
@@ -1075,7 +1135,7 @@ impl Interpreter {
                         // Cursor remains at the end
 
                         // Redraw
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         stdout.flush()?;
                     }
                     // Handle cursor within the line
@@ -1088,7 +1148,7 @@ impl Interpreter {
                         cursor_pos += 1;
 
                         // Redraw
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -1104,9 +1164,9 @@ impl Interpreter {
                         return Ok("exit".to_string());
                     } else if cursor_pos < buffer.len() {
                         buffer.remove(cursor_pos);
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         write!(stdout, " ")?; // Clear deleted character
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -1147,7 +1207,7 @@ impl Interpreter {
                                     buffer = self.history[search_index].clone();
                                     cursor_pos = buffer.len();
                                 } else {
-                                    write!(stdout, "\r$ {}", original_buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, original_buffer)?;
                                     cursor_pos = original_cursor_pos;
                                 }
                                 stdout.flush()?;
@@ -1156,7 +1216,7 @@ impl Interpreter {
 
                             // Escape - cancel search
                             27 => {
-                                write!(stdout, "\r$ {}", original_buffer)?;
+                                write!(stdout, "\r{}{}", prompt, original_buffer)?;
                                 cursor_pos = original_cursor_pos;
                                 stdout.flush()?;
                                 break;
@@ -1302,9 +1362,9 @@ impl Interpreter {
                                     *history_index -= 1;
                                     buffer = self.history[*history_index].clone();
                                     cursor_pos = buffer.len();
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     write!(stdout, "                    ")?; // Clear any leftovers
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     stdout.flush()?;
                                 }
                             }
@@ -1320,9 +1380,9 @@ impl Interpreter {
                                         buffer = self.history[*history_index].clone();
                                         cursor_pos = buffer.len();
                                     }
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     write!(stdout, "                    ")?; // Clear any leftovers
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     stdout.flush()?;
                                 }
                             }
@@ -1331,7 +1391,7 @@ impl Interpreter {
                             b'D' => {
                                 if cursor_pos > 0 {
                                     cursor_pos -= 1;
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     // Move cursor back to the right position
                                     for _ in 0..(buffer.len() - cursor_pos) {
                                         write!(stdout, "\x1B[D")?;
@@ -1344,7 +1404,7 @@ impl Interpreter {
                             b'C' => {
                                 if cursor_pos < buffer.len() {
                                     cursor_pos += 1;
-                                    write!(stdout, "\r$ {}", buffer)?;
+                                    write!(stdout, "\r{}{}", prompt, buffer)?;
                                     // Move cursor back to the right position
                                     for _ in 0..(buffer.len() - cursor_pos) {
                                         write!(stdout, "\x1B[D")?;
@@ -1365,7 +1425,7 @@ impl Interpreter {
                     if ch.is_ascii() && !ch.is_control() {
                         buffer.insert(cursor_pos, ch);
                         cursor_pos += 1;
-                        write!(stdout, "\r$ {}", buffer)?;
+                        write!(stdout, "\r{}{}", prompt, buffer)?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -1513,37 +1573,52 @@ impl Interpreter {
         node: &Node,
         evaluator: &mut E,
     ) -> Result<String, io::Error> {
-        let mut temp_interpreter = Interpreter::new();
+        // For command substitution, we need to execute the command and capture its output
+        // Let's handle this more directly for simple commands
+        match node {
+            Node::Command {
+                name,
+                args,
+                redirects: _,
+            } => {
+                // Execute the command directly using std::process::Command
+                let mut command = std::process::Command::new(name);
+                command.args(args);
 
-        for (key, value) in &self.variables {
-            temp_interpreter
-                .variables
-                .insert(key.clone(), value.clone());
+                // Set environment variables
+                for (key, value) in &self.variables {
+                    command.env(key, value);
+                }
+
+                match command.output() {
+                    Ok(output) => {
+                        if output.status.success() {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            Ok(stdout.trim_end().to_string())
+                        } else {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            Err(io::Error::new(io::ErrorKind::Other, stderr.to_string()))
+                        }
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            _ => {
+                // For more complex nodes, fall back to the original approach but without RC file loading
+                let mut temp_interpreter = Interpreter {
+                    variables: self.variables.clone(),
+                    last_exit_code: 0,
+                    history: Vec::new(),
+                    history_file: None,
+                    rc_file: None,
+                };
+
+                // This is a simplified approach - just evaluate the node and return empty string
+                // In a real implementation, you'd need to properly capture stdout
+                temp_interpreter.evaluate_with_evaluator(node, evaluator)?;
+                Ok(String::new())
+            }
         }
-
-        // Use os_pipe to capture output (implementation depends on your pipe setup)
-        let (mut reader, writer) = os_pipe::pipe()?;
-        let _writer_clone = writer.try_clone()?;
-
-        // Execute the command with the evaluator
-        let exit_code = temp_interpreter.evaluate_with_evaluator(node, evaluator)?;
-
-        drop(writer);
-
-        let mut output = String::new();
-        reader.read_to_string(&mut output)?;
-
-        if output.ends_with('\n') {
-            output.pop();
-        }
-
-        if exit_code != 0 {
-            self.last_exit_code = exit_code;
-            self.variables
-                .insert("?".to_string(), exit_code.to_string());
-        }
-
-        Ok(output)
     }
 
     fn expand_variables(&self, input: &str) -> String {
@@ -1596,6 +1671,44 @@ mod tests {
     use std::env;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_custom_prompt() {
+        // Create interpreter without loading RC file
+        let mut interpreter = Interpreter {
+            variables: HashMap::default(),
+            last_exit_code: 0,
+            history: Vec::new(),
+            history_file: None,
+            rc_file: None,
+        };
+
+        // Test default prompt
+        assert_eq!(interpreter.get_prompt(), "$ ");
+
+        // Test custom prompt
+        interpreter
+            .variables
+            .insert("PROMPT".to_string(), "flash> ".to_string());
+        assert_eq!(interpreter.get_prompt(), "flash> ");
+
+        // Test prompt with variable expansion
+        interpreter
+            .variables
+            .insert("USER".to_string(), "testuser".to_string());
+        interpreter
+            .variables
+            .insert("PROMPT".to_string(), "$USER> ".to_string());
+        assert_eq!(interpreter.get_prompt(), "testuser> ");
+
+        // Test prompt with PWD expansion
+        interpreter
+            .variables
+            .insert("PROMPT".to_string(), "flash:$PWD$ ".to_string());
+        let prompt = interpreter.get_prompt();
+        assert!(prompt.starts_with("flash:"));
+        assert!(prompt.ends_with("$ "));
+    }
 
     #[test]
     fn test_variable_expansion() {

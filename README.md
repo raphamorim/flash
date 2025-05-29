@@ -135,6 +135,42 @@ chsh -s /bin/flash
 chsh -s /usr/local/bin/flash
 ```
 
+## Configuration
+
+Flash supports configuration through a `.flashrc` file in your home directory. This file is executed when the shell starts up.
+
+### Custom Prompt
+
+You can customize your shell prompt by setting the `PROMPT` variable in your `.flashrc` file:
+
+```bash
+# Simple prompt
+export PROMPT="flash> "
+
+# Prompt with current directory
+export PROMPT="flash:$PWD$ "
+
+# Prompt with username and hostname
+export PROMPT="$USER@$HOSTNAME:$PWD$ "
+```
+
+The `PROMPT` variable supports variable expansion, so you can use any environment variables in your prompt.
+
+### Example .flashrc
+
+```bash
+# Custom prompt
+export PROMPT="flash:$PWD$ "
+
+# Environment variables
+export EDITOR=vim
+export PAGER=less
+
+# Custom aliases (when alias support is added)
+# alias ll="ls -la"
+# alias grep="grep --color=auto"
+```
+
 --
 
 ## As library
