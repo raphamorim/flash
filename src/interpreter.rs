@@ -613,6 +613,7 @@ pub struct Interpreter {
     pub history: Vec<String>,
     pub history_file: Option<String>,
     pub rc_file: Option<String>,
+    pub args: Vec<String>, // Command line arguments ($0, $1, $2, ...)
 }
 
 impl Default for Interpreter {
@@ -667,6 +668,7 @@ impl Interpreter {
             history,
             history_file,
             rc_file,
+            args: Vec::new(), // Initialize empty args, will be set when running scripts
         };
 
         // Load and execute flashrc file if it exists
@@ -675,6 +677,12 @@ impl Interpreter {
         }
 
         interpreter
+    }
+
+    /// Set command line arguments for the interpreter
+    /// args[0] should be the script name, args[1] should be $1, etc.
+    pub fn set_args(&mut self, args: Vec<String>) {
+        self.args = args;
     }
 
     /// Load and execute the flashrc file
@@ -690,10 +698,10 @@ impl Interpreter {
                         }
                     }
                     Err(e) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Failed to read flashrc file {}: {}", rc_path, e),
-                        ));
+                        return Err(io::Error::other(format!(
+                            "Failed to read flashrc file {}: {}",
+                            rc_path, e
+                        )));
                     }
                 }
             }
@@ -1820,7 +1828,7 @@ impl Interpreter {
                             Ok(stdout.trim_end().to_string())
                         } else {
                             let stderr = String::from_utf8_lossy(&output.stderr);
-                            Err(io::Error::new(io::ErrorKind::Other, stderr.to_string()))
+                            Err(io::Error::other(stderr.to_string()))
                         }
                     }
                     Err(e) => Err(e),
@@ -1834,6 +1842,7 @@ impl Interpreter {
                     history: Vec::new(),
                     history_file: None,
                     rc_file: None,
+                    args: self.args.clone(), // Copy current args
                 };
 
                 // This is a simplified approach - just evaluate the node and return empty string
@@ -1864,13 +1873,22 @@ impl Interpreter {
                         var_name.push(c);
                     }
                 } else {
-                    // Read until non-alphanumeric character
-                    while let Some(&c) = chars.peek() {
-                        if c.is_alphanumeric() || c == '_' {
+                    // Read variable name
+                    // Handle special single-character variables first
+                    if let Some(&c) = chars.peek() {
+                        if matches!(c, '#' | '@' | '*' | '?' | '$') {
                             var_name.push(c);
                             chars.next();
                         } else {
-                            break;
+                            // Read until non-alphanumeric character
+                            while let Some(&c) = chars.peek() {
+                                if c.is_alphanumeric() || c == '_' {
+                                    var_name.push(c);
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -1878,6 +1896,28 @@ impl Interpreter {
                 // Replace with variable value if exists
                 if let Some(value) = self.variables.get(&var_name) {
                     result.push_str(value);
+                } else if var_name.chars().all(|c| c.is_ascii_digit()) {
+                    // Handle positional parameters ($0, $1, $2, ...)
+                    if let Ok(index) = var_name.parse::<usize>() {
+                        if let Some(arg) = self.args.get(index) {
+                            result.push_str(arg);
+                        }
+                        // If the argument doesn't exist, expand to empty string (standard shell behavior)
+                    }
+                } else if var_name == "#" {
+                    // $# - number of positional parameters (excluding $0)
+                    let count = if self.args.is_empty() {
+                        0
+                    } else {
+                        self.args.len() - 1
+                    };
+                    result.push_str(&count.to_string());
+                } else if var_name == "@" || var_name == "*" {
+                    // $@ and $* - all positional parameters (excluding $0)
+                    if self.args.len() > 1 {
+                        let params = &self.args[1..];
+                        result.push_str(&params.join(" "));
+                    }
                 }
             } else {
                 result.push(c);
@@ -1904,6 +1944,7 @@ mod tests {
             history: Vec::new(),
             history_file: None,
             rc_file: None,
+            args: Vec::new(),
         };
 
         // Test default prompt
@@ -2234,5 +2275,245 @@ mod tests {
             "Expected full_names to include '$TEST_PATH', got: {:?}",
             full_names
         );
+    }
+
+    #[test]
+    fn test_positional_parameters_basic() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up arguments: $0 = script, $1 = first arg, $2 = second arg
+        interpreter.set_args(vec![
+            "test_script.sh".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+        ]);
+
+        // Test $0 (script name)
+        assert_eq!(interpreter.expand_variables("$0"), "test_script.sh");
+
+        // Test $1 (first argument)
+        assert_eq!(interpreter.expand_variables("$1"), "hello");
+
+        // Test $2 (second argument)
+        assert_eq!(interpreter.expand_variables("$2"), "world");
+
+        // Test $3 (non-existent argument - should expand to empty)
+        assert_eq!(interpreter.expand_variables("$3"), "");
+
+        // Test ${1} (braced syntax)
+        assert_eq!(interpreter.expand_variables("${1}"), "hello");
+
+        // Test ${2} (braced syntax)
+        assert_eq!(interpreter.expand_variables("${2}"), "world");
+    }
+
+    #[test]
+    fn test_positional_parameters_special_variables() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up arguments
+        interpreter.set_args(vec![
+            "script.sh".to_string(),
+            "arg1".to_string(),
+            "arg2".to_string(),
+            "arg3".to_string(),
+        ]);
+
+        // Test $# (argument count - excludes $0)
+        assert_eq!(interpreter.expand_variables("$#"), "3");
+
+        // Test $@ (all arguments excluding $0)
+        assert_eq!(interpreter.expand_variables("$@"), "arg1 arg2 arg3");
+
+        // Test $* (all arguments excluding $0)
+        assert_eq!(interpreter.expand_variables("$*"), "arg1 arg2 arg3");
+
+        // Test with no arguments (only script name)
+        interpreter.set_args(vec!["script.sh".to_string()]);
+        assert_eq!(interpreter.expand_variables("$#"), "0");
+        assert_eq!(interpreter.expand_variables("$@"), "");
+        assert_eq!(interpreter.expand_variables("$*"), "");
+    }
+
+    #[test]
+    fn test_positional_parameters_empty_args() {
+        let mut interpreter = Interpreter::new();
+
+        // Test with empty args vector
+        interpreter.set_args(vec![]);
+
+        assert_eq!(interpreter.expand_variables("$0"), "");
+        assert_eq!(interpreter.expand_variables("$1"), "");
+        assert_eq!(interpreter.expand_variables("$#"), "0");
+        assert_eq!(interpreter.expand_variables("$@"), "");
+        assert_eq!(interpreter.expand_variables("$*"), "");
+    }
+
+    #[test]
+    fn test_positional_parameters_in_commands() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up arguments
+        interpreter.set_args(vec![
+            "test.sh".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+        ]);
+
+        // Test expansion in complex strings
+        assert_eq!(
+            interpreter.expand_variables("First: $1, Second: $2"),
+            "First: hello, Second: world"
+        );
+
+        // Test expansion with other variables
+        interpreter
+            .variables
+            .insert("USER".to_string(), "testuser".to_string());
+        assert_eq!(
+            interpreter.expand_variables("User: $USER, Arg: $1"),
+            "User: testuser, Arg: hello"
+        );
+
+        // Test mixed braced and unbraced
+        assert_eq!(
+            interpreter.expand_variables("${1}_suffix and ${2}_suffix"),
+            "hello_suffix and world_suffix"
+        );
+    }
+
+    #[test]
+    fn test_positional_parameters_numeric_parsing() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up many arguments to test numeric parsing
+        interpreter.set_args(vec![
+            "script.sh".to_string(),
+            "arg1".to_string(),
+            "arg2".to_string(),
+            "arg3".to_string(),
+            "arg4".to_string(),
+            "arg5".to_string(),
+            "arg6".to_string(),
+            "arg7".to_string(),
+            "arg8".to_string(),
+            "arg9".to_string(),
+            "arg10".to_string(),
+        ]);
+
+        // Test single digits
+        assert_eq!(interpreter.expand_variables("$1"), "arg1");
+        assert_eq!(interpreter.expand_variables("$9"), "arg9");
+
+        // Test double digits (should work with braces)
+        assert_eq!(interpreter.expand_variables("${10}"), "arg10");
+
+        // Test that $10 without braces only gets $1 followed by "0"
+        assert_eq!(interpreter.expand_variables("$10"), "arg10");
+
+        // Test non-existent high numbers
+        assert_eq!(interpreter.expand_variables("${99}"), "");
+    }
+
+    #[test]
+    fn test_positional_parameters_with_quotes() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up arguments with spaces and special characters
+        interpreter.set_args(vec![
+            "script.sh".to_string(),
+            "hello world".to_string(),
+            "arg with spaces".to_string(),
+            "special!@#$%".to_string(),
+        ]);
+
+        // Test that arguments with spaces are preserved
+        assert_eq!(interpreter.expand_variables("$1"), "hello world");
+        assert_eq!(interpreter.expand_variables("$2"), "arg with spaces");
+        assert_eq!(interpreter.expand_variables("$3"), "special!@#$%");
+
+        // Test $@ preserves all arguments
+        assert_eq!(
+            interpreter.expand_variables("$@"),
+            "hello world arg with spaces special!@#$%"
+        );
+    }
+
+    #[test]
+    fn test_echo_command_with_positional_parameters() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up arguments
+        interpreter.set_args(vec![
+            "test.sh".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+        ]);
+
+        // Test that echo properly expands positional parameters
+        // We can't easily test the actual output, but we can test the expansion
+        let expanded = interpreter.expand_variables("First arg: $1, Second arg: $2");
+        assert_eq!(expanded, "First arg: hello, Second arg: world");
+
+        // Test with $# and $@
+        let expanded = interpreter.expand_variables("Count: $#, All: $@");
+        assert_eq!(expanded, "Count: 2, All: hello world");
+    }
+
+    #[test]
+    fn test_set_args_method() {
+        let mut interpreter = Interpreter::new();
+
+        // Test initial state
+        assert!(interpreter.args.is_empty());
+
+        // Test setting args
+        let test_args = vec![
+            "script.sh".to_string(),
+            "arg1".to_string(),
+            "arg2".to_string(),
+        ];
+        interpreter.set_args(test_args.clone());
+
+        assert_eq!(interpreter.args, test_args);
+        assert_eq!(interpreter.expand_variables("$0"), "script.sh");
+        assert_eq!(interpreter.expand_variables("$1"), "arg1");
+        assert_eq!(interpreter.expand_variables("$2"), "arg2");
+
+        // Test overwriting args
+        let new_args = vec!["new_script.sh".to_string(), "new_arg".to_string()];
+        interpreter.set_args(new_args.clone());
+
+        assert_eq!(interpreter.args, new_args);
+        assert_eq!(interpreter.expand_variables("$0"), "new_script.sh");
+        assert_eq!(interpreter.expand_variables("$1"), "new_arg");
+        assert_eq!(interpreter.expand_variables("$2"), ""); // Should be empty now
+    }
+
+    #[test]
+    fn test_positional_parameters_edge_cases() {
+        let mut interpreter = Interpreter::new();
+
+        // Test with single argument (only script name)
+        interpreter.set_args(vec!["script.sh".to_string()]);
+
+        assert_eq!(interpreter.expand_variables("$0"), "script.sh");
+        assert_eq!(interpreter.expand_variables("$1"), "");
+        assert_eq!(interpreter.expand_variables("$#"), "0");
+        assert_eq!(interpreter.expand_variables("$@"), "");
+
+        // Test with empty string arguments
+        interpreter.set_args(vec![
+            "script.sh".to_string(),
+            "".to_string(),
+            "non_empty".to_string(),
+            "".to_string(),
+        ]);
+
+        assert_eq!(interpreter.expand_variables("$1"), "");
+        assert_eq!(interpreter.expand_variables("$2"), "non_empty");
+        assert_eq!(interpreter.expand_variables("$3"), "");
+        assert_eq!(interpreter.expand_variables("$#"), "3");
+        assert_eq!(interpreter.expand_variables("$@"), " non_empty ");
     }
 }

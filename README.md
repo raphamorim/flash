@@ -39,12 +39,12 @@ Legends:
 |                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
 |                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
 |                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ❌  | |
-| **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ❌  | |
+| **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ✅  | |
 |                       | `case` / `esac`                                 | ✅          | ✅   | ❌  | |
 |                       | `for` loops                                     | ✅          | ✅   | ❌  | |
 |                       | `while`, `until` loops                          | ✅          | ✅   | ❌  | |
 |                       | `select` loop                                   | ❌          | ✅   | ❌  | |
-|                       | `[[ ... ]]` test command                        | ❌          | ✅   | ❌  | Extended test |
+|                       | `[[ ... ]]` test command                        | ❌          | ✅   | ✅  | Extended test |
 | **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | ✅  | |
 |                       | `function` keyword                              | ❌          | ✅   | ✅  | Bash-specific |
 | **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | ✅          | ✅   | ✅  | |

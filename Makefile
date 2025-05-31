@@ -13,6 +13,7 @@ lint:
 test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
+	RUST_BACKTRACE=full cargo test --test integration_tests
 
 test-if:
 	@echo "Building Flash for if/elif/else functionality tests..."
