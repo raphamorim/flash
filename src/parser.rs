@@ -300,6 +300,63 @@ impl Parser {
                 self.next_token();
                 Node::StringLiteral(value)
             }
+            // Handle keywords as assignment values
+            TokenKind::Continue => {
+                self.next_token();
+                Node::StringLiteral("continue".to_string())
+            }
+            TokenKind::Break => {
+                self.next_token();
+                Node::StringLiteral("break".to_string())
+            }
+            TokenKind::If => {
+                self.next_token();
+                Node::StringLiteral("if".to_string())
+            }
+            TokenKind::Then => {
+                self.next_token();
+                Node::StringLiteral("then".to_string())
+            }
+            TokenKind::Else => {
+                self.next_token();
+                Node::StringLiteral("else".to_string())
+            }
+            TokenKind::Elif => {
+                self.next_token();
+                Node::StringLiteral("elif".to_string())
+            }
+            TokenKind::Fi => {
+                self.next_token();
+                Node::StringLiteral("fi".to_string())
+            }
+            TokenKind::For => {
+                self.next_token();
+                Node::StringLiteral("for".to_string())
+            }
+            TokenKind::While => {
+                self.next_token();
+                Node::StringLiteral("while".to_string())
+            }
+            TokenKind::Do => {
+                self.next_token();
+                Node::StringLiteral("do".to_string())
+            }
+            TokenKind::Done => {
+                self.next_token();
+                Node::StringLiteral("done".to_string())
+            }
+            TokenKind::In => {
+                self.next_token();
+                Node::StringLiteral("in".to_string())
+            }
+            TokenKind::Function => {
+                self.next_token();
+                Node::StringLiteral("function".to_string())
+            }
+            TokenKind::Export => {
+                self.next_token();
+                Node::StringLiteral("export".to_string())
+            }
             _ => Node::StringLiteral(String::new()),
         }
     }
@@ -757,6 +814,63 @@ impl Parser {
                 self.next_token(); // Skip value
                 Box::new(Node::StringLiteral(value))
             }
+            // Handle keywords as assignment values
+            TokenKind::Continue => {
+                self.next_token();
+                Box::new(Node::StringLiteral("continue".to_string()))
+            }
+            TokenKind::Break => {
+                self.next_token();
+                Box::new(Node::StringLiteral("break".to_string()))
+            }
+            TokenKind::If => {
+                self.next_token();
+                Box::new(Node::StringLiteral("if".to_string()))
+            }
+            TokenKind::Then => {
+                self.next_token();
+                Box::new(Node::StringLiteral("then".to_string()))
+            }
+            TokenKind::Else => {
+                self.next_token();
+                Box::new(Node::StringLiteral("else".to_string()))
+            }
+            TokenKind::Elif => {
+                self.next_token();
+                Box::new(Node::StringLiteral("elif".to_string()))
+            }
+            TokenKind::Fi => {
+                self.next_token();
+                Box::new(Node::StringLiteral("fi".to_string()))
+            }
+            TokenKind::For => {
+                self.next_token();
+                Box::new(Node::StringLiteral("for".to_string()))
+            }
+            TokenKind::While => {
+                self.next_token();
+                Box::new(Node::StringLiteral("while".to_string()))
+            }
+            TokenKind::Do => {
+                self.next_token();
+                Box::new(Node::StringLiteral("do".to_string()))
+            }
+            TokenKind::Done => {
+                self.next_token();
+                Box::new(Node::StringLiteral("done".to_string()))
+            }
+            TokenKind::In => {
+                self.next_token();
+                Box::new(Node::StringLiteral("in".to_string()))
+            }
+            TokenKind::Function => {
+                self.next_token();
+                Box::new(Node::StringLiteral("function".to_string()))
+            }
+            TokenKind::Export => {
+                self.next_token();
+                Box::new(Node::StringLiteral("export".to_string()))
+            }
             _ => {
                 // Handle unexpected token or empty value
                 Box::new(Node::StringLiteral(String::new()))
@@ -861,6 +975,63 @@ impl Parser {
                     // Check if this word is a variable reference (starts with $)
                     // and keep it as a single token
                     args.push(word.clone());
+                    self.next_token();
+                }
+                // Handle keywords as regular arguments when they appear in command arguments
+                TokenKind::Continue => {
+                    args.push("continue".to_string());
+                    self.next_token();
+                }
+                TokenKind::Break => {
+                    args.push("break".to_string());
+                    self.next_token();
+                }
+                TokenKind::If => {
+                    args.push("if".to_string());
+                    self.next_token();
+                }
+                TokenKind::Then => {
+                    args.push("then".to_string());
+                    self.next_token();
+                }
+                TokenKind::Else => {
+                    args.push("else".to_string());
+                    self.next_token();
+                }
+                TokenKind::Elif => {
+                    args.push("elif".to_string());
+                    self.next_token();
+                }
+                TokenKind::Fi => {
+                    args.push("fi".to_string());
+                    self.next_token();
+                }
+                TokenKind::For => {
+                    args.push("for".to_string());
+                    self.next_token();
+                }
+                TokenKind::While => {
+                    args.push("while".to_string());
+                    self.next_token();
+                }
+                TokenKind::Do => {
+                    args.push("do".to_string());
+                    self.next_token();
+                }
+                TokenKind::Done => {
+                    args.push("done".to_string());
+                    self.next_token();
+                }
+                TokenKind::In => {
+                    args.push("in".to_string());
+                    self.next_token();
+                }
+                TokenKind::Function => {
+                    args.push("function".to_string());
+                    self.next_token();
+                }
+                TokenKind::Export => {
+                    args.push("export".to_string());
                     self.next_token();
                 }
                 TokenKind::ExtGlob(_) => {
