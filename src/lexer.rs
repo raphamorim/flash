@@ -330,6 +330,20 @@ impl Lexer {
                     }
                 }
             }
+            '!' => {
+                // Check for != operator
+                if self.peek_char() == '=' {
+                    self.read_char(); // Consume the '='
+                    Token {
+                        kind: TokenKind::Word("!=".to_string()),
+                        value: "!=".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    // Single ! is treated as a word character
+                    self.read_word()
+                }
+            }
             '$' => {
                 // Check for command substitution $( syntax
                 if self.peek_char() == '(' {

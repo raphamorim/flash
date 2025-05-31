@@ -56,6 +56,16 @@ impl Evaluator for DefaultEvaluator {
                 suffix,
             } => self.evaluate_ext_glob(*operator, patterns, suffix, interpreter),
             Node::Export { name, value } => self.evaluate_export(name, value, interpreter),
+            Node::IfStatement {
+                condition,
+                consequence,
+                alternative,
+            } => self.evaluate_if_statement(condition, consequence, alternative, interpreter),
+            Node::ElifBranch {
+                condition,
+                consequence,
+            } => self.evaluate_elif_branch(condition, consequence, interpreter),
+            Node::ElseBranch { consequence } => self.evaluate_else_branch(consequence, interpreter),
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
@@ -145,6 +155,19 @@ impl DefaultEvaluator {
                         Ok(1)
                     }
                 }
+            }
+            "[" | "test" => {
+                // Built-in test command
+                self.evaluate_test_command(args, interpreter)
+            }
+            "exit" => {
+                // Built-in exit command
+                let exit_code = if args.is_empty() {
+                    0
+                } else {
+                    args[0].parse::<i32>().unwrap_or(0)
+                };
+                std::process::exit(exit_code);
             }
             _ => {
                 // External command
@@ -380,6 +403,206 @@ impl DefaultEvaluator {
         }
 
         Ok(0)
+    }
+
+    fn evaluate_if_statement(
+        &mut self,
+        condition: &Node,
+        consequence: &Node,
+        alternative: &Option<Box<Node>>,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Evaluate the condition
+        let condition_result = interpreter.evaluate_with_evaluator(condition, self)?;
+
+        if condition_result == 0 {
+            // Condition is true (exit code 0), execute the consequence
+            interpreter.evaluate_with_evaluator(consequence, self)
+        } else if let Some(alt) = alternative {
+            // Condition is false, execute the alternative (elif or else)
+            interpreter.evaluate_with_evaluator(alt, self)
+        } else {
+            // No alternative, return the condition's exit code
+            Ok(condition_result)
+        }
+    }
+
+    fn evaluate_elif_branch(
+        &mut self,
+        condition: &Node,
+        consequence: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Evaluate the elif condition
+        let condition_result = interpreter.evaluate_with_evaluator(condition, self)?;
+
+        if condition_result == 0 {
+            // Condition is true, execute the consequence
+            interpreter.evaluate_with_evaluator(consequence, self)
+        } else {
+            // Condition is false, return the condition's exit code
+            Ok(condition_result)
+        }
+    }
+
+    fn evaluate_else_branch(
+        &mut self,
+        consequence: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Always execute the else consequence
+        interpreter.evaluate_with_evaluator(consequence, self)
+    }
+
+    fn evaluate_test_command(
+        &mut self,
+        args: &[String],
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Handle the test command ([ and test)
+        // For [ command, the last argument should be "]"
+        let test_args = if !args.is_empty() && args[args.len() - 1] == "]" {
+            &args[..args.len() - 1] // Remove the closing "]"
+        } else {
+            args
+        };
+
+        if test_args.is_empty() {
+            return Ok(1); // Empty test is false
+        }
+
+        // Handle different test operations
+        match test_args.len() {
+            1 => {
+                // Single argument: test if string is non-empty
+                let expanded_arg = interpreter.expand_variables(&test_args[0]);
+                Ok(if expanded_arg.is_empty() { 1 } else { 0 })
+            }
+            3 => {
+                // Three arguments: left operator right
+                let left = interpreter.expand_variables(&test_args[0]);
+                let operator = &test_args[1];
+                let right = interpreter.expand_variables(&test_args[2]);
+
+                match operator.as_str() {
+                    "=" | "==" => Ok(if left == right { 0 } else { 1 }),
+                    "!=" => Ok(if left != right { 0 } else { 1 }),
+                    "-eq" => {
+                        // Numeric equality
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l == r { 0 } else { 1 }),
+                            _ => Ok(1), // Non-numeric values are not equal
+                        }
+                    }
+                    "-ne" => {
+                        // Numeric inequality
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l != r { 0 } else { 1 }),
+                            _ => Ok(0), // Non-numeric values are not equal
+                        }
+                    }
+                    "-lt" => {
+                        // Numeric less than
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l < r { 0 } else { 1 }),
+                            _ => Ok(1),
+                        }
+                    }
+                    "-le" => {
+                        // Numeric less than or equal
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l <= r { 0 } else { 1 }),
+                            _ => Ok(1),
+                        }
+                    }
+                    "-gt" => {
+                        // Numeric greater than
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l > r { 0 } else { 1 }),
+                            _ => Ok(1),
+                        }
+                    }
+                    "-ge" => {
+                        // Numeric greater than or equal
+                        match (left.parse::<i64>(), right.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => Ok(if l >= r { 0 } else { 1 }),
+                            _ => Ok(1),
+                        }
+                    }
+                    _ => Ok(1), // Unknown operator
+                }
+            }
+            2 => {
+                // Two arguments: unary operator
+                let operator = &test_args[0];
+                let operand = interpreter.expand_variables(&test_args[1]);
+
+                match operator.as_str() {
+                    "-n" => Ok(if !operand.is_empty() { 0 } else { 1 }), // String is non-empty
+                    "-z" => Ok(if operand.is_empty() { 0 } else { 1 }),  // String is empty
+                    "-f" => {
+                        // File exists and is a regular file
+                        let path = Path::new(&operand);
+                        Ok(if path.is_file() { 0 } else { 1 })
+                    }
+                    "-d" => {
+                        // File exists and is a directory
+                        let path = Path::new(&operand);
+                        Ok(if path.is_dir() { 0 } else { 1 })
+                    }
+                    "-e" => {
+                        // File exists
+                        let path = Path::new(&operand);
+                        Ok(if path.exists() { 0 } else { 1 })
+                    }
+                    "-r" => {
+                        // File is readable
+                        let path = Path::new(&operand);
+                        Ok(if path.exists() && fs::metadata(path).is_ok() {
+                            0
+                        } else {
+                            1
+                        })
+                    }
+                    "-w" => {
+                        // File is writable
+                        let path = Path::new(&operand);
+                        Ok(
+                            if path.exists()
+                                && fs::metadata(path).is_ok_and(|m| !m.permissions().readonly())
+                            {
+                                0
+                            } else {
+                                1
+                            },
+                        )
+                    }
+                    "-x" => {
+                        // File is executable
+                        let path = Path::new(&operand);
+                        #[cfg(unix)]
+                        {
+                            Ok(
+                                if path.exists()
+                                    && fs::metadata(path)
+                                        .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+                                {
+                                    0
+                                } else {
+                                    1
+                                },
+                            )
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            Ok(if path.exists() { 0 } else { 1 })
+                        }
+                    }
+                    _ => Ok(1), // Unknown unary operator
+                }
+            }
+            _ => Ok(1), // Invalid number of arguments
+        }
     }
 }
 

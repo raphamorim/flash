@@ -27,3 +27,5 @@ jobs:
         run: cargo build --tests --release
       - name: cargo test
         run: cargo test --release
+      - name: make test-if
+        run: make test-if

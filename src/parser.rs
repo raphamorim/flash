@@ -363,8 +363,8 @@ impl Parser {
     fn parse_if_statement(&mut self) -> Node {
         self.next_token(); // Skip "if"
 
-        // Parse condition until we hit "then"
-        let condition = self.parse_until_token_kind(TokenKind::Then);
+        // Parse condition as a single command until we hit "then"
+        let condition = self.parse_condition_until_token_kind(TokenKind::Then);
 
         self.next_token(); // Skip "then"
 
@@ -372,16 +372,8 @@ impl Parser {
         let consequence =
             self.parse_until_token_kinds(&[TokenKind::Elif, TokenKind::Else, TokenKind::Fi]);
 
-        // Check for elif or else branches
-        let alternative = match self.current_token.kind {
-            TokenKind::Elif => Some(Box::new(self.parse_elif_branch())),
-            TokenKind::Else => Some(Box::new(self.parse_else_branch())),
-            TokenKind::Fi => {
-                self.next_token(); // Skip "fi"
-                None
-            }
-            _ => None,
-        };
+        // Handle elif/else chaining
+        let alternative = self.parse_elif_else_chain();
 
         Node::IfStatement {
             condition: Box::new(condition),
@@ -390,12 +382,72 @@ impl Parser {
         }
     }
 
+    // Parse a chain of elif/else statements
+    fn parse_elif_else_chain(&mut self) -> Option<Box<Node>> {
+        match self.current_token.kind {
+            TokenKind::Elif => {
+                self.next_token(); // Skip "elif"
+
+                // Parse elif condition
+                let elif_condition = self.parse_condition_until_token_kind(TokenKind::Then);
+                self.next_token(); // Skip "then"
+
+                // Parse elif consequence
+                let elif_consequence = self.parse_until_token_kinds(&[
+                    TokenKind::Elif,
+                    TokenKind::Else,
+                    TokenKind::Fi,
+                ]);
+
+                // Check what follows this elif and handle chaining properly
+                match self.current_token.kind {
+                    TokenKind::Elif => {
+                        // More elif statements - create nested IfStatement
+                        let next_alternative = self.parse_elif_else_chain();
+                        Some(Box::new(Node::IfStatement {
+                            condition: Box::new(elif_condition),
+                            consequence: Box::new(elif_consequence),
+                            alternative: next_alternative,
+                        }))
+                    }
+                    TokenKind::Else => {
+                        // Else follows - create IfStatement with else alternative
+                        let else_branch = self.parse_else_branch();
+                        Some(Box::new(Node::IfStatement {
+                            condition: Box::new(elif_condition),
+                            consequence: Box::new(elif_consequence),
+                            alternative: Some(Box::new(else_branch)),
+                        }))
+                    }
+                    TokenKind::Fi => {
+                        // End of if statement - just return ElifBranch for simple cases
+                        self.next_token(); // Skip "fi"
+                        Some(Box::new(Node::ElifBranch {
+                            condition: Box::new(elif_condition),
+                            consequence: Box::new(elif_consequence),
+                        }))
+                    }
+                    _ => Some(Box::new(Node::ElifBranch {
+                        condition: Box::new(elif_condition),
+                        consequence: Box::new(elif_consequence),
+                    })),
+                }
+            }
+            TokenKind::Else => Some(Box::new(self.parse_else_branch())),
+            TokenKind::Fi => {
+                self.next_token(); // Skip "fi"
+                None
+            }
+            _ => None,
+        }
+    }
+
     // Parse elif branch
     fn parse_elif_branch(&mut self) -> Node {
         self.next_token(); // Skip "elif"
 
-        // Parse condition until we hit "then"
-        let condition = self.parse_until_token_kind(TokenKind::Then);
+        // Parse condition as a single command until we hit "then"
+        let condition = self.parse_condition_until_token_kind(TokenKind::Then);
 
         self.next_token(); // Skip "then"
 
@@ -403,41 +455,10 @@ impl Parser {
         let consequence =
             self.parse_until_token_kinds(&[TokenKind::Elif, TokenKind::Else, TokenKind::Fi]);
 
-        // Handle what follows this elif
-        let node = Node::ElifBranch {
+        // Just return the ElifBranch - let the caller handle chaining
+        Node::ElifBranch {
             condition: Box::new(condition),
             consequence: Box::new(consequence),
-        };
-
-        // Chain multiple elif/else statements
-        match self.current_token.kind {
-            TokenKind::Elif => {
-                let next_branch = self.parse_elif_branch();
-                Node::IfStatement {
-                    condition: Box::new(node.clone()),
-                    consequence: match node {
-                        Node::ElifBranch { consequence, .. } => consequence,
-                        _ => unreachable!(),
-                    },
-                    alternative: Some(Box::new(next_branch)),
-                }
-            }
-            TokenKind::Else => {
-                let else_branch = self.parse_else_branch();
-                Node::IfStatement {
-                    condition: Box::new(node.clone()),
-                    consequence: match node {
-                        Node::ElifBranch { consequence, .. } => consequence,
-                        _ => unreachable!(),
-                    },
-                    alternative: Some(Box::new(else_branch)),
-                }
-            }
-            TokenKind::Fi => {
-                self.next_token(); // Skip "fi"
-                node
-            }
-            _ => node,
         }
     }
 
@@ -452,6 +473,29 @@ impl Parser {
 
         Node::ElseBranch {
             consequence: Box::new(consequence),
+        }
+    }
+
+    // method to parse a single command condition until a specific token kind is encountered
+    fn parse_condition_until_token_kind(&mut self, stop_at: TokenKind) -> Node {
+        // Parse a single command as the condition
+        if let Some(statement) = self.parse_statement() {
+            // Skip any semicolons or newlines before the stop token
+            while (self.current_token.kind == TokenKind::Semicolon
+                || self.current_token.kind == TokenKind::Newline)
+                && self.current_token.kind != stop_at
+                && self.current_token.kind != TokenKind::EOF
+            {
+                self.next_token();
+            }
+            statement
+        } else {
+            // Return empty command if no valid statement found
+            Node::Command {
+                name: String::new(),
+                args: Vec::new(),
+                redirects: Vec::new(),
+            }
         }
     }
 
@@ -804,6 +848,12 @@ impl Parser {
         loop {
             match &self.current_token.kind {
                 TokenKind::Word(word) => {
+                    // Special case: if command name is "[" and we encounter "]", include it and stop
+                    if name == "[" && word == "]" {
+                        args.push(word.clone());
+                        self.next_token(); // Skip the "]"
+                        break;
+                    }
                     // Check if this word is a variable reference (starts with $)
                     // and keep it as a single token
                     args.push(word.clone());
@@ -887,6 +937,11 @@ impl Parser {
                     }
 
                     args.push(var_ref);
+                }
+                TokenKind::Assignment => {
+                    // In command context, treat = as a regular argument
+                    args.push("=".to_string());
+                    self.next_token();
                 }
                 _ => break, // Exit when we're not on a word, quote, or redirect token
             }
@@ -3286,10 +3341,11 @@ fi
                 // Check the condition contains a test command
                 if let Node::Command { name, args, .. } = &**condition {
                     assert_eq!(name, "[");
-                    assert_eq!(args.len(), 3);
+                    assert_eq!(args.len(), 4);
                     assert_eq!(args[0], "$1");
                     assert_eq!(args[1], "=");
                     assert_eq!(args[2], "test");
+                    assert_eq!(args[3], "]");
                 } else {
                     panic!("Expected condition to be a Command node {:?}", condition);
                 }
@@ -3368,10 +3424,11 @@ fi
                 // Check first condition (if)
                 if let Node::Command { name, args, .. } = &**condition {
                     assert_eq!(name, "[");
-                    assert_eq!(args.len(), 3);
+                    assert_eq!(args.len(), 4);
                     assert_eq!(args[0], "$1");
                     assert_eq!(args[1], "=");
                     assert_eq!(args[2], "test1");
+                    assert_eq!(args[3], "]");
                 } else {
                     panic!("Expected condition to be a Command node");
                 }
@@ -3392,38 +3449,81 @@ fi
 
                 // Check the elif and else branches
                 if let Some(alt) = alternative {
-                    // The alternative should be an elif branch
-                    if let Node::ElifBranch {
-                        condition: elif_condition,
-                        consequence: elif_consequence,
-                    } = &**alt
-                    {
-                        // Check elif condition
-                        if let Node::Command { name, args, .. } = &**elif_condition {
-                            assert_eq!(name, "[");
-                            assert_eq!(args.len(), 3);
-                            assert_eq!(args[0], "$1");
-                            assert_eq!(args[1], "=");
-                            assert_eq!(args[2], "test2");
-                        } else {
-                            panic!("Expected elif condition to be a Command node");
-                        }
-
-                        // Check elif consequence
-                        if let Node::List { statements, .. } = &**elif_consequence {
-                            assert_eq!(statements.len(), 1);
-                            if let Node::Command { name, args, .. } = &statements[0] {
-                                assert_eq!(name, "echo");
-                                assert_eq!(args.len(), 1);
-                                assert_eq!(args[0], "This is test2");
+                    // The alternative should be either an ElifBranch (simple case) or IfStatement (with else)
+                    match &**alt {
+                        Node::ElifBranch {
+                            condition: elif_condition,
+                            consequence: elif_consequence,
+                        } => {
+                            // Check elif condition
+                            if let Node::Command { name, args, .. } = &**elif_condition {
+                                assert_eq!(name, "[");
+                                assert_eq!(args.len(), 4);
+                                assert_eq!(args[0], "$1");
+                                assert_eq!(args[1], "=");
+                                assert_eq!(args[2], "test2");
+                                assert_eq!(args[3], "]");
                             } else {
-                                panic!("Expected elif consequence to contain an echo command");
+                                panic!("Expected elif condition to be a Command node");
                             }
-                        } else {
-                            panic!("Expected elif consequence to be a List node");
+
+                            // Check elif consequence
+                            if let Node::List { statements, .. } = &**elif_consequence {
+                                assert_eq!(statements.len(), 1);
+                                if let Node::Command { name, args, .. } = &statements[0] {
+                                    assert_eq!(name, "echo");
+                                    assert_eq!(args.len(), 1);
+                                    assert_eq!(args[0], "This is test2");
+                                } else {
+                                    panic!("Expected elif consequence to contain an echo command");
+                                }
+                            } else {
+                                panic!("Expected elif consequence to be a List node");
+                            }
                         }
-                    } else {
-                        panic!("Expected first alternative to be an ElifBranch node");
+                        Node::IfStatement {
+                            condition: elif_condition,
+                            consequence: elif_consequence,
+                            alternative: else_alternative,
+                        } => {
+                            // This is the case when there's an else clause after elif
+                            // Check elif condition
+                            if let Node::Command { name, args, .. } = &**elif_condition {
+                                assert_eq!(name, "[");
+                                assert_eq!(args.len(), 4);
+                                assert_eq!(args[0], "$1");
+                                assert_eq!(args[1], "=");
+                                assert_eq!(args[2], "test2");
+                                assert_eq!(args[3], "]");
+                            } else {
+                                panic!("Expected elif condition to be a Command node");
+                            }
+
+                            // Check elif consequence
+                            if let Node::List { statements, .. } = &**elif_consequence {
+                                assert_eq!(statements.len(), 1);
+                                if let Node::Command { name, args, .. } = &statements[0] {
+                                    assert_eq!(name, "echo");
+                                    assert_eq!(args.len(), 1);
+                                    assert_eq!(args[0], "This is test2");
+                                } else {
+                                    panic!("Expected elif consequence to contain an echo command");
+                                }
+                            } else {
+                                panic!("Expected elif consequence to be a List node");
+                            }
+
+                            // Verify that there's an else branch
+                            assert!(
+                                else_alternative.is_some(),
+                                "Expected else branch after elif"
+                            );
+                        }
+                        _ => {
+                            panic!(
+                                "Expected alternative to be either ElifBranch or IfStatement node"
+                            );
+                        }
                     }
                 } else {
                     panic!("Expected if statement to have an elif branch");
