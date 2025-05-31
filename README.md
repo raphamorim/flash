@@ -16,7 +16,6 @@ Flash is a fast, extensible, and hackable toolkit for working with POSIX-style s
 
 Ideally I would like to use Flash in my daily basis. It's still far from proper usage.
 
-- [ ] `flashrc`.
 - [ ] Functions for parser and interop.
 - [ ] Loops for parser and interop.
 - [ ] Array index references.
