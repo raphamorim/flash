@@ -766,13 +766,13 @@ impl Interpreter {
 
             // Replace other common variables
             for (key, value) in &self.variables {
-                let var_pattern = format!("${}", key);
+                let var_pattern = format!("ϟ{}", key);
                 result = result.replace(&var_pattern, value);
             }
 
             result
         } else {
-            "$ ".to_string()
+            "ϟ ".to_string()
         }
     }
 
@@ -1684,7 +1684,7 @@ mod tests {
         };
 
         // Test default prompt
-        assert_eq!(interpreter.get_prompt(), "$ ");
+        assert_eq!(interpreter.get_prompt(), "ϟ ");
 
         // Test custom prompt
         interpreter
