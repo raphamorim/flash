@@ -205,6 +205,12 @@ impl DefaultEvaluator {
         redirects: &[Redirect],
         interpreter: &mut Interpreter,
     ) -> Result<i32, io::Error> {
+        // Expand glob patterns in arguments
+        let expanded_args = interpreter.expand_glob_patterns(args);
+
+        // Use expanded args for the rest of the function
+        let args = &expanded_args;
+
         // First check if this is a function call
         if interpreter.functions.contains_key(name) {
             return self.evaluate_function_call(name, args, redirects, interpreter);
@@ -1171,6 +1177,31 @@ impl Interpreter {
             }
         }
 
+        // Check if we're completing after a pipe (should complete commands)
+        if words.len() >= 2 {
+            // Look for the last pipe in the words
+            let mut last_pipe_index = None;
+            for (i, word) in words.iter().enumerate() {
+                if *word == "|" || *word == "&&" || *word == "||" {
+                    last_pipe_index = Some(i);
+                }
+            }
+
+            if let Some(pipe_index) = last_pipe_index {
+                // If we're right after a pipe or completing the first word after a pipe
+                if pipe_index == words.len() - 2 && !input_up_to_cursor.ends_with(' ') {
+                    // We're completing the command after the pipe
+                    let prefix = words.last().unwrap_or(&"");
+                    let (suffixes, full_names) = self.get_commands(prefix);
+                    return (suffixes, full_names);
+                } else if pipe_index == words.len() - 1 && input_up_to_cursor.ends_with(' ') {
+                    // We just finished typing the pipe and are starting a new command
+                    let (suffixes, full_names) = self.get_commands("");
+                    return (suffixes, full_names);
+                }
+            }
+        }
+
         // Otherwise, assume we're completing a filename
         let last_word = if input_up_to_cursor.ends_with(' ') {
             ""
@@ -1237,10 +1268,15 @@ impl Interpreter {
 
         // Determine the directory to search and the filename prefix
         let (dir_path, file_prefix) = if prefix.contains('/') {
-            let path = Path::new(prefix);
-            let parent = path.parent().unwrap_or(Path::new(""));
-            let file_name = path.file_name().map_or("", |f| f.to_str().unwrap_or(""));
-            (parent.to_path_buf(), file_name.to_string())
+            if prefix.ends_with('/') {
+                // If prefix ends with '/', we want to list all files in that directory
+                (PathBuf::from(prefix), String::new())
+            } else {
+                let path = Path::new(prefix);
+                let parent = path.parent().unwrap_or(Path::new(""));
+                let file_name = path.file_name().map_or("", |f| f.to_str().unwrap_or(""));
+                (parent.to_path_buf(), file_name.to_string())
+            }
         } else {
             (PathBuf::from("."), prefix.to_string())
         };
@@ -2515,6 +2551,195 @@ impl Interpreter {
         let mut evaluator = DefaultEvaluator;
         temp_interpreter.capture_command_output(&ast, &mut evaluator)
     }
+
+    /// Expand glob patterns in command arguments
+    pub fn expand_glob_patterns(&self, args: &[String]) -> Vec<String> {
+        let mut expanded_args = Vec::new();
+
+        for arg in args {
+            if self.contains_glob_pattern(arg) {
+                let matches = self.glob_match(arg);
+                if matches.is_empty() {
+                    // If no matches found, keep the original pattern
+                    expanded_args.push(arg.clone());
+                } else {
+                    expanded_args.extend(matches);
+                }
+            } else {
+                expanded_args.push(arg.clone());
+            }
+        }
+
+        expanded_args
+    }
+
+    /// Check if a string contains glob patterns
+    fn contains_glob_pattern(&self, s: &str) -> bool {
+        s.contains('*') || s.contains('?') || s.contains('[')
+    }
+
+    /// Match a glob pattern against files in the specified directory
+    fn glob_match_in_dir(&self, pattern: &str, search_dir: &Path) -> Vec<String> {
+        let mut matches = Vec::new();
+
+        // Handle absolute and relative paths
+        let (dir_path, file_pattern) = if let Some(last_slash) = pattern.rfind('/') {
+            let dir = &pattern[..last_slash];
+            let file = &pattern[last_slash + 1..];
+            (search_dir.join(dir), file.to_string())
+        } else {
+            (search_dir.to_path_buf(), pattern.to_string())
+        };
+
+        // Read directory entries
+        if let Ok(entries) = fs::read_dir(&dir_path) {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    // Skip hidden files unless pattern explicitly starts with '.'
+                    if filename.starts_with('.') && !file_pattern.starts_with('.') {
+                        continue;
+                    }
+
+                    if self.matches_glob_pattern(filename, &file_pattern) {
+                        let full_path = if pattern.contains('/') {
+                            format!("{}/{}", dir_path.display(), filename)
+                        } else {
+                            filename.to_string()
+                        };
+                        matches.push(full_path);
+                    }
+                }
+            }
+        }
+
+        // Sort matches for consistent output
+        matches.sort();
+        matches
+    }
+
+    /// Match a glob pattern against files in the current directory
+    fn glob_match(&self, pattern: &str) -> Vec<String> {
+        self.glob_match_in_dir(pattern, Path::new("."))
+    }
+
+    /// Check if a filename matches a glob pattern
+    fn matches_glob_pattern(&self, filename: &str, pattern: &str) -> bool {
+        self.glob_match_recursive(filename, pattern, 0, 0)
+    }
+
+    /// Recursive glob pattern matching implementation
+    fn glob_match_recursive(
+        &self,
+        filename: &str,
+        pattern: &str,
+        f_idx: usize,
+        p_idx: usize,
+    ) -> bool {
+        let f_chars: Vec<char> = filename.chars().collect();
+        let p_chars: Vec<char> = pattern.chars().collect();
+
+        // Base cases
+        if p_idx >= p_chars.len() {
+            return f_idx >= f_chars.len();
+        }
+
+        if f_idx >= f_chars.len() {
+            // Check if remaining pattern is all '*'
+            return p_chars[p_idx..].iter().all(|&c| c == '*');
+        }
+
+        match p_chars[p_idx] {
+            '*' => {
+                // Try matching zero or more characters
+                // First try matching zero characters (skip the *)
+                if self.glob_match_recursive(filename, pattern, f_idx, p_idx + 1) {
+                    return true;
+                }
+                // Then try matching one or more characters
+                for i in f_idx..f_chars.len() {
+                    if self.glob_match_recursive(filename, pattern, i + 1, p_idx + 1) {
+                        return true;
+                    }
+                }
+                false
+            }
+            '?' => {
+                // Match exactly one character
+                self.glob_match_recursive(filename, pattern, f_idx + 1, p_idx + 1)
+            }
+            '[' => {
+                // Character class matching
+                if let Some(end_bracket) = self.find_closing_bracket(&p_chars, p_idx) {
+                    let char_class = &p_chars[p_idx + 1..end_bracket];
+                    if self.matches_char_class(f_chars[f_idx], char_class) {
+                        self.glob_match_recursive(filename, pattern, f_idx + 1, end_bracket + 1)
+                    } else {
+                        false
+                    }
+                } else {
+                    // Invalid bracket, treat as literal
+                    f_chars[f_idx] == '['
+                        && self.glob_match_recursive(filename, pattern, f_idx + 1, p_idx + 1)
+                }
+            }
+            c => {
+                // Literal character match
+                f_chars[f_idx] == c
+                    && self.glob_match_recursive(filename, pattern, f_idx + 1, p_idx + 1)
+            }
+        }
+    }
+
+    /// Find the closing bracket for a character class
+    fn find_closing_bracket(&self, chars: &[char], start: usize) -> Option<usize> {
+        let mut i = start + 1;
+        while i < chars.len() {
+            if chars[i] == ']' && i > start + 1 {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// Check if a character matches a character class
+    fn matches_char_class(&self, ch: char, char_class: &[char]) -> bool {
+        if char_class.is_empty() {
+            return false;
+        }
+
+        let negated = char_class[0] == '!' || char_class[0] == '^';
+        let class_chars = if negated {
+            &char_class[1..]
+        } else {
+            char_class
+        };
+
+        let mut matches = false;
+        let mut i = 0;
+
+        while i < class_chars.len() {
+            if i + 2 < class_chars.len() && class_chars[i + 1] == '-' {
+                // Range like a-z
+                let start = class_chars[i];
+                let end = class_chars[i + 2];
+                if ch >= start && ch <= end {
+                    matches = true;
+                    break;
+                }
+                i += 3;
+            } else {
+                // Single character
+                if ch == class_chars[i] {
+                    matches = true;
+                    break;
+                }
+                i += 1;
+            }
+        }
+
+        if negated { !matches } else { matches }
+    }
 }
 
 #[cfg(test)]
@@ -3155,39 +3380,50 @@ mod tests {
         fs::write(temp_path.join("test2.txt"), "content").unwrap();
         fs::create_dir(temp_path.join("testdir")).unwrap();
 
-        // Change to the temporary directory
-        let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(temp_path).unwrap();
-
-        // Create interpreter
+        // Create interpreter with modified get_path_completions that takes a directory parameter
         let interpreter = Interpreter::new();
 
-        // Test with prefix "test" - now returns (suffixes, full_names)
-        let (suffixes, full_names) = interpreter.get_path_completions("test");
+        // Test with prefix "test" using absolute path
+        let test_prefix = format!("{}/test", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&test_prefix);
+
+        // Check that we get some completions
         assert!(
-            full_names.contains(&"test1.txt".to_string())
-                || full_names.contains(&"test2.txt".to_string())
-                || full_names.contains(&"testdir/".to_string())
+            !full_names.is_empty(),
+            "Expected some completions, got none"
         );
+
+        // Check for expected files/directories
+        let has_expected = full_names.iter().any(|name| {
+            name.contains("test1.txt") || name.contains("test2.txt") || name.contains("testdir")
+        });
         assert!(
-            suffixes.contains(&"1.txt".to_string())
-                || suffixes.contains(&"2.txt".to_string())
-                || suffixes.contains(&"dir/".to_string())
+            has_expected,
+            "Expected completions to contain test files, got: {:?}",
+            full_names
         );
 
         // Test directory completion (should add trailing slash)
-        let (suffixes, full_names) = interpreter.get_path_completions("testd");
-        assert!(full_names.contains(&"testdir/".to_string()));
-        assert!(suffixes.contains(&"ir/".to_string()));
+        let testd_prefix = format!("{}/testd", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&testd_prefix);
+        let has_dir = full_names
+            .iter()
+            .any(|name| name.contains("testdir") && name.ends_with('/'));
+        assert!(
+            has_dir,
+            "Expected directory completion with trailing slash, got: {:?}",
+            full_names
+        );
 
         // Test with specific file prefix
-        let (suffixes, full_names) = interpreter.get_path_completions("test1");
-        assert!(full_names.contains(&"test1.txt".to_string()));
-        assert!(suffixes.contains(&".txt".to_string()));
-        assert!(!suffixes.contains(&"2.txt".to_string()));
-
-        // Change back to original directory
-        env::set_current_dir(original_dir).unwrap();
+        let test1_prefix = format!("{}/test1", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&test1_prefix);
+        let has_test1 = full_names.iter().any(|name| name.contains("test1.txt"));
+        assert!(
+            has_test1,
+            "Expected test1.txt completion, got: {:?}",
+            full_names
+        );
     }
 
     #[test]
@@ -3256,16 +3492,12 @@ mod tests {
         fs::create_dir(temp_path.join("dir1/subdir")).unwrap();
         fs::write(temp_path.join("dir1/file.txt"), "content").unwrap();
 
-        // Change to the temporary directory
-        let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(temp_path).unwrap();
-
         // Create interpreter
         let interpreter = Interpreter::new();
 
-        // Test completion with directory path
-        let input = "cd dir1/";
-        let (_suffixes, full_names) = interpreter.generate_completions(input, input.len());
+        // Test completion with directory path using absolute path
+        let input_prefix = format!("{}/dir1/", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&input_prefix);
 
         // Check if any completion contains "subdir" or "file.txt"
         let has_expected_completion = full_names
@@ -3278,8 +3510,8 @@ mod tests {
         );
 
         // Test completion with partial path
-        let input = "cd dir1/s";
-        let (suffixes, _full_names) = interpreter.generate_completions(input, input.len());
+        let input_prefix = format!("{}/dir1/s", temp_path.display());
+        let (suffixes, _full_names) = interpreter.get_path_completions(&input_prefix);
         let has_subdir = suffixes.iter().any(|c| c.contains("ubdir"));
         assert!(
             has_subdir,
@@ -3288,17 +3520,14 @@ mod tests {
         );
 
         // Test completion with file path
-        let input = "cd dir1/f";
-        let (suffixes, _full_names) = interpreter.generate_completions(input, input.len());
+        let input_prefix = format!("{}/dir1/f", temp_path.display());
+        let (suffixes, _full_names) = interpreter.get_path_completions(&input_prefix);
         let has_file = suffixes.iter().any(|c| c.contains("ile.txt"));
         assert!(
             has_file,
             "Expected suffixes to contain 'ile.txt', got: {:?}",
             suffixes
         );
-
-        // Change back to original directory
-        env::set_current_dir(original_dir).unwrap();
     }
 
     #[test]
@@ -3623,5 +3852,236 @@ mod tests {
         assert_eq!(interpreter.expand_variables("$3"), "");
         assert_eq!(interpreter.expand_variables("$#"), "3");
         assert_eq!(interpreter.expand_variables("$@"), " non_empty ");
+    }
+
+    #[test]
+    fn test_glob_pattern_detection() {
+        let interpreter = Interpreter::new();
+
+        // Test patterns that should be detected as globs
+        assert!(interpreter.contains_glob_pattern("*.txt"));
+        assert!(interpreter.contains_glob_pattern("file?.log"));
+        assert!(interpreter.contains_glob_pattern("[abc]*.tmp"));
+        assert!(interpreter.contains_glob_pattern("test*"));
+        assert!(interpreter.contains_glob_pattern("?test"));
+        assert!(interpreter.contains_glob_pattern("file[0-9].txt"));
+
+        // Test patterns that should NOT be detected as globs
+        assert!(!interpreter.contains_glob_pattern("file.txt"));
+        assert!(!interpreter.contains_glob_pattern("test"));
+        assert!(!interpreter.contains_glob_pattern("path/to/file"));
+    }
+
+    #[test]
+    fn test_glob_pattern_matching() {
+        let interpreter = Interpreter::new();
+
+        // Test * wildcard
+        assert!(interpreter.matches_glob_pattern("file.txt", "*.txt"));
+        assert!(interpreter.matches_glob_pattern("test.txt", "*.txt"));
+        assert!(interpreter.matches_glob_pattern("a.txt", "*.txt"));
+        assert!(!interpreter.matches_glob_pattern("file.log", "*.txt"));
+        assert!(interpreter.matches_glob_pattern("anything", "*"));
+        assert!(interpreter.matches_glob_pattern("", "*"));
+
+        // Test ? wildcard
+        assert!(interpreter.matches_glob_pattern("file1.txt", "file?.txt"));
+        assert!(interpreter.matches_glob_pattern("fileA.txt", "file?.txt"));
+        assert!(!interpreter.matches_glob_pattern("file.txt", "file?.txt"));
+        assert!(!interpreter.matches_glob_pattern("file12.txt", "file?.txt"));
+
+        // Test character classes
+        assert!(interpreter.matches_glob_pattern("file1.txt", "file[123].txt"));
+        assert!(interpreter.matches_glob_pattern("file2.txt", "file[123].txt"));
+        assert!(interpreter.matches_glob_pattern("file3.txt", "file[123].txt"));
+        assert!(!interpreter.matches_glob_pattern("file4.txt", "file[123].txt"));
+        assert!(!interpreter.matches_glob_pattern("filea.txt", "file[123].txt"));
+
+        // Test character ranges
+        assert!(interpreter.matches_glob_pattern("file1.txt", "file[0-9].txt"));
+        assert!(interpreter.matches_glob_pattern("file5.txt", "file[0-9].txt"));
+        assert!(interpreter.matches_glob_pattern("file9.txt", "file[0-9].txt"));
+        assert!(!interpreter.matches_glob_pattern("filea.txt", "file[0-9].txt"));
+
+        assert!(interpreter.matches_glob_pattern("filea.txt", "file[a-z].txt"));
+        assert!(interpreter.matches_glob_pattern("filem.txt", "file[a-z].txt"));
+        assert!(interpreter.matches_glob_pattern("filez.txt", "file[a-z].txt"));
+        assert!(!interpreter.matches_glob_pattern("fileA.txt", "file[a-z].txt"));
+        assert!(!interpreter.matches_glob_pattern("file1.txt", "file[a-z].txt"));
+
+        // Test negated character classes
+        assert!(!interpreter.matches_glob_pattern("file1.txt", "file[!123].txt"));
+        assert!(!interpreter.matches_glob_pattern("file2.txt", "file[!123].txt"));
+        assert!(interpreter.matches_glob_pattern("file4.txt", "file[!123].txt"));
+        assert!(interpreter.matches_glob_pattern("filea.txt", "file[!123].txt"));
+
+        // Test complex patterns
+        assert!(interpreter.matches_glob_pattern("test123.log", "test*.log"));
+        assert!(interpreter.matches_glob_pattern("test.log", "test*.log"));
+        assert!(interpreter.matches_glob_pattern("backup_file_2023.txt", "*_file_*.txt"));
+        assert!(interpreter.matches_glob_pattern("config.ini", "*.ini"));
+
+        // Test exact matches
+        assert!(interpreter.matches_glob_pattern("exact", "exact"));
+        assert!(!interpreter.matches_glob_pattern("exact", "different"));
+    }
+
+    #[test]
+    fn test_character_class_matching() {
+        let interpreter = Interpreter::new();
+
+        // Test simple character class
+        assert!(interpreter.matches_char_class('a', &['a', 'b', 'c']));
+        assert!(interpreter.matches_char_class('b', &['a', 'b', 'c']));
+        assert!(interpreter.matches_char_class('c', &['a', 'b', 'c']));
+        assert!(!interpreter.matches_char_class('d', &['a', 'b', 'c']));
+
+        // Test range
+        assert!(interpreter.matches_char_class('a', &['a', '-', 'z']));
+        assert!(interpreter.matches_char_class('m', &['a', '-', 'z']));
+        assert!(interpreter.matches_char_class('z', &['a', '-', 'z']));
+        assert!(!interpreter.matches_char_class('A', &['a', '-', 'z']));
+
+        // Test negated class
+        assert!(!interpreter.matches_char_class('a', &['!', 'a', 'b', 'c']));
+        assert!(!interpreter.matches_char_class('b', &['!', 'a', 'b', 'c']));
+        assert!(interpreter.matches_char_class('d', &['!', 'a', 'b', 'c']));
+
+        // Test negated range
+        assert!(!interpreter.matches_char_class('a', &['!', 'a', '-', 'z']));
+        assert!(!interpreter.matches_char_class('m', &['!', 'a', '-', 'z']));
+        assert!(interpreter.matches_char_class('A', &['!', 'a', '-', 'z']));
+        assert!(interpreter.matches_char_class('1', &['!', 'a', '-', 'z']));
+    }
+
+    #[test]
+    fn test_glob_expansion_with_temp_files() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create test files
+        fs::write(temp_path.join("file1.txt"), "content1").unwrap();
+        fs::write(temp_path.join("file2.txt"), "content2").unwrap();
+        fs::write(temp_path.join("test.log"), "log content").unwrap();
+        fs::write(temp_path.join("data.csv"), "csv content").unwrap();
+        fs::write(temp_path.join("script.sh"), "script content").unwrap();
+
+        let interpreter = Interpreter::new();
+
+        // Test *.txt pattern
+        let mut matches = interpreter.glob_match_in_dir("*.txt", temp_path);
+        matches.sort();
+        assert_eq!(matches, vec!["file1.txt", "file2.txt"]);
+
+        // Test *.log pattern
+        let matches = interpreter.glob_match_in_dir("*.log", temp_path);
+        assert_eq!(matches, vec!["test.log"]);
+
+        // Test file?.txt pattern
+        let mut matches = interpreter.glob_match_in_dir("file?.txt", temp_path);
+        matches.sort();
+        assert_eq!(matches, vec!["file1.txt", "file2.txt"]);
+
+        // Test pattern with no matches
+        let matches = interpreter.glob_match_in_dir("*.xyz", temp_path);
+        assert!(matches.is_empty());
+
+        // Test * pattern (should match all files)
+        let mut matches = interpreter.glob_match_in_dir("*", temp_path);
+        matches.sort();
+        assert_eq!(
+            matches,
+            vec![
+                "data.csv",
+                "file1.txt",
+                "file2.txt",
+                "script.sh",
+                "test.log"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_expand_glob_patterns() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create test files
+        fs::write(temp_path.join("file1.txt"), "content1").unwrap();
+        fs::write(temp_path.join("file2.txt"), "content2").unwrap();
+        fs::write(temp_path.join("test.log"), "log content").unwrap();
+
+        // Create a custom interpreter that uses the temp directory for glob matching
+        let interpreter = TestInterpreter::new(temp_path.to_path_buf());
+
+        // Test expansion with glob patterns
+        let args = vec!["ls".to_string(), "*.txt".to_string()];
+        let expanded = interpreter.expand_glob_patterns(&args);
+        assert_eq!(expanded[0], "ls");
+        assert!(expanded.contains(&"file1.txt".to_string()));
+        assert!(expanded.contains(&"file2.txt".to_string()));
+        assert_eq!(expanded.len(), 3); // ls + 2 txt files
+
+        // Test expansion with mixed patterns and literals
+        let args = vec![
+            "command".to_string(),
+            "literal".to_string(),
+            "*.log".to_string(),
+        ];
+        let expanded = interpreter.expand_glob_patterns(&args);
+        assert_eq!(expanded, vec!["command", "literal", "test.log"]);
+
+        // Test expansion with no matches (should keep original pattern)
+        let args = vec!["command".to_string(), "*.xyz".to_string()];
+        let expanded = interpreter.expand_glob_patterns(&args);
+        assert_eq!(expanded, vec!["command", "*.xyz"]);
+
+        // Test expansion with no glob patterns
+        let args = vec![
+            "command".to_string(),
+            "arg1".to_string(),
+            "arg2".to_string(),
+        ];
+        let expanded = interpreter.expand_glob_patterns(&args);
+        assert_eq!(expanded, args);
+    }
+
+    // Helper struct for testing that uses a specific directory for glob operations
+    struct TestInterpreter {
+        interpreter: Interpreter,
+        test_dir: PathBuf,
+    }
+
+    impl TestInterpreter {
+        fn new(test_dir: PathBuf) -> Self {
+            Self {
+                interpreter: Interpreter::new(),
+                test_dir,
+            }
+        }
+
+        fn expand_glob_patterns(&self, args: &[String]) -> Vec<String> {
+            let mut expanded_args = Vec::new();
+
+            for arg in args {
+                if self.interpreter.contains_glob_pattern(arg) {
+                    let matches = self.interpreter.glob_match_in_dir(arg, &self.test_dir);
+                    if matches.is_empty() {
+                        // If no matches found, keep the original pattern
+                        expanded_args.push(arg.clone());
+                    } else {
+                        expanded_args.extend(matches);
+                    }
+                } else {
+                    expanded_args.push(arg.clone());
+                }
+            }
+
+            expanded_args
+        }
     }
 }

@@ -96,6 +96,13 @@ fn is_special_char(ch: char) -> bool {
     )
 }
 
+fn is_word_terminator(ch: char) -> bool {
+    matches!(
+        ch,
+        '=' | '|' | ';' | '\n' | '&' | '(' | ')' | '<' | '>' | '$' | '"' | '\'' | '`' | '#'
+    )
+}
+
 /// Lexer that converts input text into tokens
 #[derive(Clone)]
 pub struct Lexer {
@@ -899,7 +906,7 @@ impl Lexer {
 
                 // After finding the closing parenthesis, continue reading
                 // any suffixes (like ".txt") that should be part of the pattern
-                while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
+                while !self.ch.is_whitespace() && self.ch != '\0' && !is_word_terminator(self.ch) {
                     word.push(self.ch);
                     self.read_char();
                 }
@@ -912,36 +919,76 @@ impl Lexer {
             }
         }
 
-        // Normal word handling
-        while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
-            word.push(self.ch);
-            self.read_char();
-        }
+        // Read word characters, including glob patterns but handling braces carefully
+        while !self.ch.is_whitespace() && self.ch != '\0' {
+            // Handle special case for '=' in command line arguments first
+            if self.ch == '=' && word.starts_with('-') {
+                // For command line arguments like --option=value, include the = as part of the word
+                word.push(self.ch);
+                self.read_char();
 
-        // Special handling for '=' in command line arguments
-        // If we encounter '=' and the word so far starts with '-', include the '=' and continue
-        if self.ch == '=' && word.starts_with('-') {
-            word.push(self.ch);
-            self.read_char();
+                // Continue reading the value part
+                while !self.ch.is_whitespace() && self.ch != '\0' && !is_word_terminator(self.ch) {
+                    word.push(self.ch);
+                    self.read_char();
+                }
+                break; // Exit the main loop after handling the argument
+            }
+            // Check for other word terminators
+            else if is_word_terminator(self.ch) {
+                break;
+            }
+            // Handle brace expansion - check if this looks like a glob pattern
+            else if self.ch == '{' {
+                // Always treat { as part of the word if we're already reading a word
+                // This handles cases like *.{txt,log}
+                word.push(self.ch);
+                self.read_char();
 
-            // Continue reading the value part after '='
-            while !self.ch.is_whitespace() && self.ch != '\0' && !is_special_char(self.ch) {
+                // Read until matching closing brace
+                let mut depth = 1;
+                while depth > 0 && self.ch != '\0' && !self.ch.is_whitespace() {
+                    if self.ch == '{' {
+                        depth += 1;
+                    } else if self.ch == '}' {
+                        depth -= 1;
+                    }
+                    word.push(self.ch);
+                    self.read_char();
+                }
+            }
+            // Handle standalone } - this should terminate the word
+            else if self.ch == '}' {
+                break;
+            }
+            // Handle character classes
+            else if self.ch == '[' {
+                word.push(self.ch);
+                self.read_char();
+
+                // Handle negation at start of character class
+                if self.ch == '!' || self.ch == '^' {
+                    word.push(self.ch);
+                    self.read_char();
+                }
+
+                // Read until closing bracket
+                while self.ch != ']' && self.ch != '\0' && !self.ch.is_whitespace() {
+                    word.push(self.ch);
+                    self.read_char();
+                }
+
+                // Include the closing bracket
+                if self.ch == ']' {
+                    word.push(self.ch);
+                    self.read_char();
+                }
+            }
+            // Handle regular characters and glob metacharacters
+            else {
                 word.push(self.ch);
                 self.read_char();
             }
-        }
-
-        // For normal words including glob patterns
-        while !self.ch.is_whitespace()
-            && self.ch != '\0'
-            && (self.ch == '*'
-                || self.ch == '?'
-                || self.ch == '['
-                || self.ch == ']'
-                || !is_special_char(self.ch))
-        {
-            word.push(self.ch);
-            self.read_char();
         }
 
         // We moved ahead one character, so step back
@@ -1974,8 +2021,7 @@ mod lexer_tests {
             TokenKind::Semicolon,
             TokenKind::Word("i".to_string()),
             TokenKind::Assignment,
-            TokenKind::CmdSubst,
-            TokenKind::LParen,
+            TokenKind::ArithSubst,
             TokenKind::Word("i+1".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
@@ -2149,8 +2195,7 @@ mod lexer_tests {
             TokenKind::Semicolon,
             TokenKind::Word("count".to_string()),
             TokenKind::Assignment,
-            TokenKind::CmdSubst,
-            TokenKind::LParen,
+            TokenKind::ArithSubst,
             TokenKind::Word("count+1".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
@@ -2288,8 +2333,7 @@ mod lexer_tests {
             TokenKind::LBrace,
             TokenKind::Word("USER".to_string()),
             TokenKind::RBrace,
-            TokenKind::CmdSubst,
-            TokenKind::LParen,
+            TokenKind::ArithSubst,
             TokenKind::Word("2+3".to_string()),
             TokenKind::RParen,
             TokenKind::RParen,
@@ -2570,5 +2614,115 @@ mod lexer_tests {
 
         // Should have 3000 tokens (echo, hello, semicolon) * 1000 repetitions
         assert_eq!(token_count, 3000);
+    }
+
+    #[test]
+    fn test_comprehensive_glob_patterns() {
+        // Test various glob patterns to ensure they're tokenized as words
+        let input = "ls *.txt file?.log [0-9]*.dat [a-z][A-Z]*.tmp [!abc]*.bak";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Word("file?.log".to_string()),
+            TokenKind::Word("[0-9]*.dat".to_string()),
+            TokenKind::Word("[a-z][A-Z]*.tmp".to_string()),
+            TokenKind::Word("[!abc]*.bak".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_glob_patterns_with_paths() {
+        // Test glob patterns with directory paths
+        let input = "find /path/*.txt ./local/file?.log ../parent/[abc]*.tmp";
+        let expected = vec![
+            TokenKind::Word("find".to_string()),
+            TokenKind::Word("/path/*.txt".to_string()),
+            TokenKind::Word("./local/file?.log".to_string()),
+            TokenKind::Word("../parent/[abc]*.tmp".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_glob_patterns_in_quotes() {
+        // Test that glob patterns in quotes are preserved as literals
+        let input = r#"echo "*.txt" 'file?.log' "test[abc].dat""#;
+        let expected = vec![
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Quote,
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Quote,
+            TokenKind::SingleQuote,
+            TokenKind::Word("file?.log".to_string()),
+            TokenKind::SingleQuote,
+            TokenKind::Quote,
+            TokenKind::Word("test[abc].dat".to_string()),
+            TokenKind::Quote,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_complex_glob_combinations() {
+        // Test complex combinations of glob patterns
+        let input = "command *.[ch] *.{txt,log} file[0-9][a-z].* test*[!~]";
+        let expected = vec![
+            TokenKind::Word("command".to_string()),
+            TokenKind::Word("*.[ch]".to_string()),
+            TokenKind::Word("*.{txt,log}".to_string()),
+            TokenKind::Word("file[0-9][a-z].*".to_string()),
+            TokenKind::Word("test*[!~]".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_glob_patterns_with_special_chars() {
+        // Test glob patterns with special characters that should be preserved
+        let input = "ls *-file.txt file_*.log test[._-]*.dat";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("*-file.txt".to_string()),
+            TokenKind::Word("file_*.log".to_string()),
+            TokenKind::Word("test[._-]*.dat".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_negated_character_classes() {
+        // Test negated character classes in glob patterns
+        let input = "ls file[!0-9].txt data[^abc].log test[!~#].dat";
+        let expected = vec![
+            TokenKind::Word("ls".to_string()),
+            TokenKind::Word("file[!0-9].txt".to_string()),
+            TokenKind::Word("data[^abc].log".to_string()),
+            TokenKind::Word("test[!~#].dat".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_glob_patterns_mixed_with_other_tokens() {
+        // Test glob patterns mixed with other shell constructs
+        let input = "if [ -f *.txt ]; then echo file*.log | grep test; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("[".to_string()),
+            TokenKind::Word("-f".to_string()),
+            TokenKind::Word("*.txt".to_string()),
+            TokenKind::Word("]".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("file*.log".to_string()),
+            TokenKind::Pipe,
+            TokenKind::Word("grep".to_string()),
+            TokenKind::Word("test".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
     }
 }

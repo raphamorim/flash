@@ -3,13 +3,19 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  lint:
-    name: Lint & Test
-    runs-on: ubuntu-latest
+  test:
+    name: Test
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
 
     env:
       RUSTFLAGS: "-C target-cpu=native"
@@ -19,13 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: rustup component add rustfmt clippy
-      - run: cargo fetch
+      - run: cargo fetch --target ${{ matrix.target }}
       - run: make lint
       - name: cargo test build
-        run: cargo build --tests --release
+        run: cargo build --tests --release --target ${{ matrix.target }}
       - name: cargo test
-        run: cargo test --release
+        run: cargo test --release --target ${{ matrix.target }}
       - name: make test-if
         run: make test-if

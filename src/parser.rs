@@ -1174,15 +1174,73 @@ impl Parser {
                 }
                 TokenKind::CmdSubst => {
                     // Handle command substitution like $(...)
-                    let _cmd_subst = self.parse_command_substitution();
-                    // For now, represent command substitution as a string
-                    // In a full implementation, you might want to store the actual node
-                    args.push("$(...)".to_string()); // Placeholder representation
+                    let _start_pos = self.current_token.position;
+                    let cmd_subst = self.parse_command_substitution();
+
+                    // For simple cases, try to reconstruct the original syntax
+                    if let Node::CommandSubstitution { command } = &cmd_subst {
+                        if let Node::Command {
+                            name,
+                            args: cmd_args,
+                            redirects,
+                        } = command.as_ref()
+                        {
+                            if redirects.is_empty() && cmd_args.is_empty() {
+                                // Simple command like $(date)
+                                args.push(format!("$({})", name));
+                            } else if redirects.is_empty() {
+                                // Command with args like $(echo hello)
+                                let mut cmd_str = name.clone();
+                                for arg in cmd_args {
+                                    cmd_str.push(' ');
+                                    cmd_str.push_str(arg);
+                                }
+                                args.push(format!("$({})", cmd_str));
+                            } else {
+                                // Complex command, use placeholder for now
+                                args.push("$(...)".to_string());
+                            }
+                        } else {
+                            // Complex command substitution, use placeholder
+                            args.push("$(...)".to_string());
+                        }
+                    } else {
+                        args.push("$(...)".to_string());
+                    }
                 }
                 TokenKind::Assignment => {
                     // In command context, treat = as a regular argument
                     args.push("=".to_string());
                     self.next_token();
+                }
+                TokenKind::LBrace => {
+                    // Handle brace expansion like {1..5} or {a,b,c}
+                    let mut brace_content = String::new();
+                    brace_content.push('{');
+                    self.next_token(); // Skip the '{'
+
+                    // Collect tokens until we find the matching '}'
+                    while self.current_token.kind != TokenKind::RBrace
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        match &self.current_token.kind {
+                            TokenKind::Word(word) => {
+                                brace_content.push_str(word);
+                            }
+                            _ => {
+                                // For other tokens, use their string representation
+                                brace_content.push_str(&self.current_token.value);
+                            }
+                        }
+                        self.next_token();
+                    }
+
+                    if self.current_token.kind == TokenKind::RBrace {
+                        brace_content.push('}');
+                        self.next_token(); // Skip the '}'
+                    }
+
+                    args.push(brace_content);
                 }
                 _ => break, // Exit when we're not on a word, quote, or redirect token
             }
@@ -2588,9 +2646,8 @@ fi
                     operators,
                 } = &**body
                 {
-                    // The parser currently treats "return 0" as two separate commands
-                    // and includes extra newline operators
-                    assert_eq!(statements.len(), 3); // echo, echo, 0 (return is parsed as command)
+                    // The parser correctly parses "return 0" as a Return node
+                    assert_eq!(statements.len(), 3); // echo, echo, return
                     assert_eq!(operators.len(), 3); // Three newlines
 
                     // Check first command
@@ -2611,12 +2668,19 @@ fi
                         panic!("Expected second Command node");
                     }
 
-                    // Check third command (currently parsed as "0" due to return handling issue)
-                    if let Node::Command { name, args, .. } = &statements[2] {
-                        assert_eq!(name, "0"); // Currently parsed incorrectly
-                        assert_eq!(args.len(), 0);
+                    // Check third statement (return 0)
+                    if let Node::Return { value } = &statements[2] {
+                        if let Some(value_node) = value {
+                            if let Node::StringLiteral(val) = value_node.as_ref() {
+                                assert_eq!(val, "0");
+                            } else {
+                                panic!("Expected StringLiteral value in Return node");
+                            }
+                        } else {
+                            panic!("Expected Some value in Return node");
+                        }
                     } else {
-                        panic!("Expected third Command node");
+                        panic!("Expected Return node");
                     }
                 } else {
                     panic!("Expected List node for function body");
@@ -4641,6 +4705,137 @@ fi
                 }
             }
             _ => panic!("Expected Export node, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_glob_patterns_in_commands() {
+        // Test various glob patterns in command arguments
+        let input = "ls *.txt file?.log [0-9]*.dat";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "ls");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "*.txt");
+                    assert_eq!(args[1], "file?.log");
+                    assert_eq!(args[2], "[0-9]*.dat");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_glob_patterns_with_character_classes() {
+        // Test character class patterns
+        let input = "find file[abc].txt data[0-9].log test[!xyz].dat";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "find");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "file[abc].txt");
+                    assert_eq!(args[1], "data[0-9].log");
+                    assert_eq!(args[2], "test[!xyz].dat");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_glob_patterns_in_conditionals() {
+        // Test glob patterns in if statements
+        let input = "if [ -f *.txt ]; then echo found; fi";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::IfStatement { condition, .. } => match condition.as_ref() {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 3);
+                        assert_eq!(args[0], "-f");
+                        assert_eq!(args[1], "*.txt");
+                        assert_eq!(args[2], "]");
+                    }
+                    _ => panic!("Expected Command node in condition"),
+                },
+                _ => panic!("Expected IfStatement node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_glob_patterns_with_paths() {
+        // Test glob patterns with directory paths
+        let input = "cp /src/*.c ./dest/file?.h ../backup/[0-9]*.bak";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "cp");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "/src/*.c");
+                    assert_eq!(args[1], "./dest/file?.h");
+                    assert_eq!(args[2], "../backup/[0-9]*.bak");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_complex_glob_patterns() {
+        // Test complex glob patterns with multiple wildcards
+        let input = "process *.[ch] *.{txt,log} file[0-9][a-z].*";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Command { name, args, .. } => {
+                    assert_eq!(name, "process");
+                    assert_eq!(args.len(), 3);
+                    assert_eq!(args[0], "*.[ch]");
+                    assert_eq!(args[1], "*.{txt,log}");
+                    assert_eq!(args[2], "file[0-9][a-z].*");
+                }
+                _ => panic!("Expected Command node"),
+            },
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_glob_patterns_in_variable_assignment() {
+        // Test glob patterns in variable assignments
+        let input = "files=*.txt";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => match &statements[0] {
+                Node::Assignment { name, value } => {
+                    assert_eq!(name, "files");
+                    match value.as_ref() {
+                        Node::StringLiteral(pattern) => {
+                            assert_eq!(pattern, "*.txt");
+                        }
+                        _ => panic!("Expected StringLiteral in assignment value"),
+                    }
+                }
+                _ => panic!("Expected Assignment node"),
+            },
+            _ => panic!("Expected List node"),
         }
     }
 }

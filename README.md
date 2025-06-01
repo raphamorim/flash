@@ -34,7 +34,7 @@ Legends:
 |-----------------------|--------------------------------------------------|-------------|------|------|-------|
 | **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
 |                       | Command substitution                            | ✅          | ✅   | ✅  | `$(cmd)` and `` `cmd` `` |
-|                       | Arithmetic substitution                         | ❌          | ✅   | ❌  | `$((expr))` |
+|                       | Arithmetic substitution                         | ❌          | ✅   | ✅  | `$((expr))` |
 |                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
 |                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
 |                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ❌  | |

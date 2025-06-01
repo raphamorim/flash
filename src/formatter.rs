@@ -301,7 +301,7 @@ impl Formatter {
                     // Remaining commands with pipe at start of next line
                     for cmd in &commands[1..] {
                         result.push_str(" \\\n");
-                        result.push_str(&self.indent());
+                        result.push_str(&self.config.indent_str); // Add one level of indentation
                         result.push_str("| ");
 
                         // Format command and remove its indent since we already added it
@@ -340,7 +340,7 @@ impl Formatter {
                             && (operator == "&&" || operator == "||")
                         {
                             result.push_str(" \\\n");
-                            result.push_str(&self.indent());
+                            result.push_str(&self.config.indent_str); // Add one level of indentation
                             result.push_str(operator);
                             result.push(' ');
                         } else {

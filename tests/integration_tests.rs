@@ -22,8 +22,12 @@ fn test_script_file_execution_with_positional_args() {
     .unwrap();
 
     // Execute the script with arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("hello")
         .arg("world")
@@ -70,8 +74,12 @@ echo "Individual: $1 $2 $3""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("first")
         .arg("second")
@@ -101,8 +109,12 @@ echo "All args: '$@'""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .output()
         .expect("Failed to execute flash");
@@ -131,8 +143,12 @@ echo "All: '$@'""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("hello world")
         .arg("test arg")
@@ -156,8 +172,12 @@ fn test_piped_input_vs_script_file_priority() {
 
     // When both script file and stdin are available, script file should take priority
     // This tests the fix for the execution flow
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("script_arg")
         .output()
@@ -173,8 +193,12 @@ fn test_piped_input_vs_script_file_priority() {
 #[test]
 fn test_command_flag_execution() {
     // Test the -c flag for direct command execution
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg("-c")
         .arg("echo \"Direct command: $1\"")
         .output()
@@ -191,8 +215,12 @@ fn test_command_flag_execution() {
 #[test]
 fn test_nonexistent_script_file() {
     // Test error handling for non-existent script files
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg("nonexistent_script.sh")
         .arg("arg1")
         .output()
@@ -219,8 +247,12 @@ echo "Mixed: ${TEST_VAR}_${1}_suffix""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("hello")
         .output()
@@ -246,8 +278,12 @@ echo "Count: $#""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"])
         .output()
@@ -285,8 +321,12 @@ fi"#,
     .unwrap();
 
     // Test with no arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .output()
         .expect("Failed to execute flash");
@@ -297,8 +337,12 @@ fi"#,
     assert!(output.status.success());
 
     // Test with one argument
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .arg("single")
         .output()
@@ -310,8 +354,12 @@ fi"#,
     assert!(output.status.success());
 
     // Test with many arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["a", "b", "c", "d", "e", "f", "g"])
         .output()
@@ -340,8 +388,12 @@ seq 1 2 10"#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .output()
         .expect("Failed to execute flash");
@@ -383,8 +435,12 @@ seq 5 7"#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .output()
         .expect("Failed to execute flash");
@@ -421,8 +477,12 @@ echo "Args provided: $@""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["arg1", "arg2", "arg3"])
         .output()
@@ -466,8 +526,12 @@ fi"#,
     .unwrap();
 
     // Test with 3 arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["arg1", "arg2", "arg3"])
         .output()
@@ -484,8 +548,12 @@ fi"#,
     assert!(output.status.success());
 
     // Test with no arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .output()
         .expect("Failed to execute flash");
@@ -525,8 +593,12 @@ echo "start variable: $start""#,
     )
     .unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["x", "y"])
         .output()
@@ -584,8 +656,12 @@ fi"#,
     .unwrap();
 
     // Test with 4 arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["a", "b", "c", "d"])
         .output()
@@ -602,8 +678,12 @@ fi"#,
     assert!(output.status.success());
 
     // Test with 2 arguments
-    let output = Command::new("cargo")
-        .args(["run", "--release", "--"])
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
         .arg(&script_path)
         .args(["a", "b"])
         .output()
@@ -614,6 +694,292 @@ fi"#,
     assert!(stdout.contains("Testing complex logic with 2 arguments"));
     assert!(stdout.contains("Exactly two arguments"));
     assert!(stdout.contains("1\n2"));
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_glob_pattern_basic() {
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("glob_test.sh");
+
+    // Create some test files in the temp directory
+    fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "content2").unwrap();
+    fs::write(temp_dir.path().join("test.log"), "log content").unwrap();
+    fs::write(temp_dir.path().join("data.csv"), "csv content").unwrap();
+
+    // Create a script that uses glob patterns
+    fs::write(
+        &script_path,
+        r#"echo "Testing glob patterns:"
+echo "All txt files:"
+echo *.txt
+
+echo "All files:"
+echo *
+
+echo "Log files:"
+echo *.log"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    // let binary_path = std::env::current_dir()
+    //     .unwrap()
+    //     .join("target/release/flash");
+
+    // Run the script from the temp directory
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Testing glob patterns:"));
+    assert!(stdout.contains("All txt files:"));
+    assert!(stdout.contains("file1.txt"));
+    assert!(stdout.contains("file2.txt"));
+    assert!(stdout.contains("All files:"));
+    assert!(stdout.contains("data.csv"));
+    assert!(stdout.contains("test.log"));
+    assert!(stdout.contains("Log files:"));
+    assert!(stdout.contains("test.log"));
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_glob_pattern_wildcards() {
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("wildcard_test.sh");
+
+    // Create test files with specific patterns
+    fs::write(temp_dir.path().join("file1.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("fileA.log"), "content").unwrap();
+    fs::write(temp_dir.path().join("fileB.log"), "content").unwrap();
+    fs::write(temp_dir.path().join("test123.dat"), "content").unwrap();
+
+    // Create a script that tests different wildcard patterns
+    fs::write(
+        &script_path,
+        r#"echo "Testing wildcard patterns:"
+
+echo "Question mark pattern (file?.txt):"
+echo file?.txt
+
+echo "Star pattern (*.log):"
+echo *.log
+
+echo "Combined pattern (test*.dat):"
+echo test*.dat"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Testing wildcard patterns:"));
+    assert!(stdout.contains("Question mark pattern"));
+    assert!(stdout.contains("file1.txt"));
+    assert!(stdout.contains("file2.txt"));
+    assert!(stdout.contains("Star pattern"));
+    assert!(stdout.contains("fileA.log"));
+    assert!(stdout.contains("fileB.log"));
+    assert!(stdout.contains("Combined pattern"));
+    assert!(stdout.contains("test123.dat"));
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_glob_pattern_character_classes() {
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("charclass_test.sh");
+
+    // Create test files for character class testing
+    fs::write(temp_dir.path().join("file1.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("file2.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("file3.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("file4.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("filea.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join("fileb.txt"), "content").unwrap();
+
+    // Create a script that tests character class patterns
+    fs::write(
+        &script_path,
+        r#"echo "Testing character class patterns:"
+
+echo "Numeric range [1-3]:"
+echo file[1-3].txt
+
+echo "Letter range [a-b]:"
+echo file[a-b].txt
+
+echo "Specific characters [24]:"
+echo file[24].txt"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Testing character class patterns:"));
+    assert!(stdout.contains("Numeric range"));
+    assert!(stdout.contains("file1.txt"));
+    assert!(stdout.contains("file2.txt"));
+    assert!(stdout.contains("file3.txt"));
+    assert!(
+        !stdout.contains("file4.txt")
+            || stdout
+                .lines()
+                .filter(|line| line.contains("file4.txt"))
+                .count()
+                <= 1
+    );
+    assert!(stdout.contains("Letter range"));
+    assert!(stdout.contains("filea.txt"));
+    assert!(stdout.contains("fileb.txt"));
+    assert!(stdout.contains("Specific characters"));
+    assert!(stdout.contains("file2.txt") || stdout.contains("file4.txt"));
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_glob_pattern_with_commands() {
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("command_glob_test.sh");
+
+    // Create test files
+    fs::write(temp_dir.path().join("readme.txt"), "readme content").unwrap();
+    fs::write(temp_dir.path().join("config.txt"), "config content").unwrap();
+    fs::write(temp_dir.path().join("data.log"), "log content").unwrap();
+
+    // Create a script that uses glob patterns with commands
+    fs::write(
+        &script_path,
+        r#"echo "Testing glob patterns with commands:"
+
+echo "Echo with glob pattern:"
+echo *.txt
+
+echo "Testing no matches:"
+echo *.xyz
+
+echo "Multiple patterns:"
+echo *.txt *.log"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Testing glob patterns with commands:"));
+    assert!(stdout.contains("Echo with glob pattern:"));
+    // Should show the expanded files
+    assert!(stdout.contains("readme.txt"));
+    assert!(stdout.contains("config.txt"));
+    assert!(stdout.contains("Testing no matches:"));
+    // Should show the literal pattern when no matches
+    assert!(stdout.contains("*.xyz"));
+    assert!(stdout.contains("Multiple patterns:"));
+    assert!(stdout.contains("data.log"));
+
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_glob_pattern_edge_cases() {
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("edge_case_test.sh");
+
+    // Create test files including hidden files
+    fs::write(temp_dir.path().join("normal.txt"), "content").unwrap();
+    fs::write(temp_dir.path().join(".hidden.txt"), "hidden content").unwrap();
+    fs::write(temp_dir.path().join("file with spaces.txt"), "content").unwrap();
+
+    // Create a script that tests edge cases
+    fs::write(
+        &script_path,
+        r#"echo "Testing glob edge cases:"
+
+echo "All visible files:"
+echo *
+
+echo "Hidden files (explicit dot):"
+echo .*
+
+echo "Empty pattern result:"
+echo *.nonexistent"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = std::env::current_dir()
+        .unwrap()
+        .join("target/release/flash");
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Testing glob edge cases:"));
+    assert!(stdout.contains("All visible files:"));
+    assert!(stdout.contains("normal.txt"));
+    // Hidden files should not appear in * pattern
+    assert!(
+        !stdout
+            .lines()
+            .any(|line| line.contains("All visible files:") && line.contains(".hidden.txt"))
+    );
+    assert!(stdout.contains("Hidden files"));
+    // Should find hidden file with explicit dot pattern
+    assert!(stdout.contains(".hidden.txt"));
+    assert!(stdout.contains("Empty pattern result:"));
+    assert!(stdout.contains("*.nonexistent"));
 
     assert!(output.status.success());
 }
