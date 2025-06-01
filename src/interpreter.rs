@@ -47,6 +47,9 @@ impl Evaluator for DefaultEvaluator {
             Node::CommandSubstitution { command } => {
                 self.evaluate_command_substitution(command, interpreter)
             }
+            Node::ArithmeticExpansion { expression } => {
+                self.evaluate_arithmetic_expansion(expression, interpreter)
+            }
             Node::StringLiteral(_value) => Ok(0),
             Node::Subshell { list } => interpreter.evaluate_with_evaluator(list, self),
             Node::Comment(_) => Ok(0),
@@ -158,6 +161,19 @@ impl DefaultEvaluator {
                     Node::CommandSubstitution { command } => {
                         // Execute command substitution and use its exit code
                         interpreter.evaluate_with_evaluator(command, self)?
+                    }
+                    Node::ArithmeticExpansion { expression } => {
+                        let expanded_expr = interpreter.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => result as i32,
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic expansion: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                0
+                            }
+                        }
                     }
                     _ => {
                         // For other node types, evaluate them and use the result
@@ -292,6 +308,80 @@ impl DefaultEvaluator {
                 // Built-in false command
                 Ok(1)
             }
+            "seq" => {
+                // Built-in seq command - generate sequence of numbers
+                match args.len() {
+                    1 => {
+                        // seq LAST - from 1 to LAST
+                        if let Ok(last) = args[0].parse::<i32>() {
+                            for i in 1..=last {
+                                println!("{}", i);
+                            }
+                            Ok(0)
+                        } else {
+                            eprintln!("seq: invalid number: {}", args[0]);
+                            Ok(1)
+                        }
+                    }
+                    2 => {
+                        // seq FIRST LAST
+                        if let (Ok(first), Ok(last)) =
+                            (args[0].parse::<i32>(), args[1].parse::<i32>())
+                        {
+                            if first <= last {
+                                for i in first..=last {
+                                    println!("{}", i);
+                                }
+                            } else {
+                                for i in (last..=first).rev() {
+                                    println!("{}", i);
+                                }
+                            }
+                            Ok(0)
+                        } else {
+                            eprintln!("seq: invalid number arguments");
+                            Ok(1)
+                        }
+                    }
+                    3 => {
+                        // seq FIRST INCREMENT LAST
+                        if let (Ok(first), Ok(increment), Ok(last)) = (
+                            args[0].parse::<i32>(),
+                            args[1].parse::<i32>(),
+                            args[2].parse::<i32>(),
+                        ) {
+                            if increment == 0 {
+                                eprintln!("seq: increment cannot be zero");
+                                Ok(1)
+                            } else if increment > 0 && first <= last {
+                                let mut i = first;
+                                while i <= last {
+                                    println!("{}", i);
+                                    i += increment;
+                                }
+                                Ok(0)
+                            } else if increment < 0 && first >= last {
+                                let mut i = first;
+                                while i >= last {
+                                    println!("{}", i);
+                                    i += increment;
+                                }
+                                Ok(0)
+                            } else {
+                                // No output for invalid range
+                                Ok(0)
+                            }
+                        } else {
+                            eprintln!("seq: invalid number arguments");
+                            Ok(1)
+                        }
+                    }
+                    _ => {
+                        eprintln!("seq: wrong number of arguments");
+                        Ok(1)
+                    }
+                }
+            }
             _ => {
                 // External command
                 let mut command = Command::new(name);
@@ -364,6 +454,36 @@ impl DefaultEvaluator {
                         if !name.is_empty() {
                             unsafe {
                                 env::set_var(name, &trimmed_output);
+                            }
+                        }
+                    }
+                    Node::ArithmeticExpansion { expression } => {
+                        let expanded_expr = interpreter.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => {
+                                let result_str = result.to_string();
+                                interpreter
+                                    .variables
+                                    .insert(name.to_string(), result_str.clone());
+                                if !name.is_empty() {
+                                    unsafe {
+                                        env::set_var(name, &result_str);
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic expansion: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                interpreter
+                                    .variables
+                                    .insert(name.to_string(), "0".to_string());
+                                if !name.is_empty() {
+                                    unsafe {
+                                        env::set_var(name, "0");
+                                    }
+                                }
                             }
                         }
                     }
@@ -501,6 +621,25 @@ impl DefaultEvaluator {
                 let output = interpreter.capture_command_output(command, self)?;
                 interpreter.variables.insert(name.to_string(), output);
             }
+            Node::ArithmeticExpansion { expression } => {
+                let expanded_expr = interpreter.expand_variables(expression);
+                match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                    Ok(result) => {
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), result.to_string());
+                    }
+                    Err(_) => {
+                        eprintln!(
+                            "arithmetic expansion: invalid expression: {}",
+                            expanded_expr
+                        );
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), "0".to_string());
+                    }
+                }
+            }
             Node::Array { elements } => {
                 // Handle array assignment - join elements or store in a specific format
                 let array_value = elements.join(" ");
@@ -598,6 +737,109 @@ impl DefaultEvaluator {
         // Command substitution doesn't print output, it returns it as a value
         // The exit code is typically 0 for successful substitution
         Ok(0)
+    }
+
+    fn evaluate_arithmetic_expansion(
+        &mut self,
+        expression: &str,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Expand variables in the expression first
+        let expanded_expr = interpreter.expand_variables(expression);
+
+        // Evaluate the arithmetic expression
+        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+            Ok(_result) => {
+                // For arithmetic expansion, we typically return 0 for success
+                // The actual result is used as a value, not an exit code
+                Ok(0)
+            }
+            Err(_) => {
+                eprintln!(
+                    "arithmetic expansion: invalid expression: {}",
+                    expanded_expr
+                );
+                Ok(1)
+            }
+        }
+    }
+
+    pub fn evaluate_arithmetic_expression(expr: &str) -> Result<i64, String> {
+        // Simple arithmetic expression evaluator
+        // This is a basic implementation that handles +, -, *, /, %, and parentheses
+
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return Ok(0);
+        }
+
+        // Handle simple number
+        if let Ok(num) = expr.parse::<i64>() {
+            return Ok(num);
+        }
+
+        // Handle basic binary operations
+        // Look for operators from lowest to highest precedence
+
+        // Addition and subtraction (lowest precedence)
+        if let Some(pos) = expr.rfind('+') {
+            let left = &expr[..pos].trim();
+            let right = &expr[pos + 1..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(left_val + right_val);
+        }
+
+        if let Some(pos) = expr.rfind('-') {
+            // Make sure it's not a negative number at the start
+            if pos > 0 {
+                let left = &expr[..pos].trim();
+                let right = &expr[pos + 1..].trim();
+                let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+                let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+                return Ok(left_val - right_val);
+            }
+        }
+
+        // Multiplication, division, and modulo (higher precedence)
+        if let Some(pos) = expr.rfind('*') {
+            let left = &expr[..pos].trim();
+            let right = &expr[pos + 1..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(left_val * right_val);
+        }
+
+        if let Some(pos) = expr.rfind('/') {
+            let left = &expr[..pos].trim();
+            let right = &expr[pos + 1..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            if right_val == 0 {
+                return Err("division by zero".to_string());
+            }
+            return Ok(left_val / right_val);
+        }
+
+        if let Some(pos) = expr.rfind('%') {
+            let left = &expr[..pos].trim();
+            let right = &expr[pos + 1..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            if right_val == 0 {
+                return Err("division by zero".to_string());
+            }
+            return Ok(left_val % right_val);
+        }
+
+        // Handle parentheses
+        if expr.starts_with('(') && expr.ends_with(')') {
+            let inner = &expr[1..expr.len() - 1];
+            return DefaultEvaluator::evaluate_arithmetic_expression(inner);
+        }
+
+        // If we can't parse it, return an error
+        Err(format!("invalid arithmetic expression: {}", expr))
     }
 
     fn evaluate_test_command(
@@ -2062,6 +2304,24 @@ impl Interpreter {
                         self.variables.insert(name.clone(), output.clone());
                         Ok(output)
                     }
+                    Node::ArithmeticExpansion { expression } => {
+                        let expanded_expr = self.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => {
+                                let result_str = result.to_string();
+                                self.variables.insert(name.clone(), result_str.clone());
+                                Ok(result_str)
+                            }
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic expansion: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                self.variables.insert(name.clone(), "0".to_string());
+                                Ok("0".to_string())
+                            }
+                        }
+                    }
                     _ => Ok(String::new()),
                 }
             }
@@ -2091,30 +2351,73 @@ impl Interpreter {
                     continue;
                 }
 
-                // Check for command substitution $(...)
+                // Check for command substitution $(...) or arithmetic expansion $((...))
                 if let Some(&'(') = chars.peek() {
-                    chars.next(); // Skip '('
+                    chars.next(); // Skip first '('
 
-                    // Find the matching closing parenthesis
-                    let mut paren_count = 1;
-                    let mut cmd_content = String::new();
+                    // Check if this is arithmetic expansion $((...))
+                    if let Some(&'(') = chars.peek() {
+                        chars.next(); // Skip second '('
 
-                    for ch in chars.by_ref() {
-                        if ch == '(' {
-                            paren_count += 1;
-                        } else if ch == ')' {
-                            paren_count -= 1;
-                            if paren_count == 0 {
-                                break;
+                        // Find the matching closing parentheses for arithmetic expansion
+                        let mut paren_count = 2;
+                        let mut arith_content = String::new();
+
+                        for ch in chars.by_ref() {
+                            if ch == '(' {
+                                paren_count += 1;
+                            } else if ch == ')' {
+                                paren_count -= 1;
+                                if paren_count == 0 {
+                                    break;
+                                }
+                            }
+                            if paren_count > 0 {
+                                arith_content.push(ch);
                             }
                         }
-                        cmd_content.push(ch);
-                    }
 
-                    // Execute the command substitution
-                    if !cmd_content.is_empty() {
-                        if let Ok(output) = self.execute_command_for_substitution(&cmd_content) {
-                            result.push_str(&output);
+                        // Evaluate the arithmetic expression
+                        if !arith_content.is_empty() {
+                            let expanded_arith = self.expand_variables(&arith_content);
+                            match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_arith)
+                            {
+                                Ok(arith_result) => {
+                                    result.push_str(&arith_result.to_string());
+                                }
+                                Err(_) => {
+                                    eprintln!(
+                                        "arithmetic expansion: invalid expression: {}",
+                                        expanded_arith
+                                    );
+                                    result.push('0');
+                                }
+                            }
+                        }
+                    } else {
+                        // Regular command substitution $(...)
+                        // Find the matching closing parenthesis
+                        let mut paren_count = 1;
+                        let mut cmd_content = String::new();
+
+                        for ch in chars.by_ref() {
+                            if ch == '(' {
+                                paren_count += 1;
+                            } else if ch == ')' {
+                                paren_count -= 1;
+                                if paren_count == 0 {
+                                    break;
+                                }
+                            }
+                            cmd_content.push(ch);
+                        }
+
+                        // Execute the command substitution
+                        if !cmd_content.is_empty() {
+                            if let Ok(output) = self.execute_command_for_substitution(&cmd_content)
+                            {
+                                result.push_str(&output);
+                            }
                         }
                     }
                     continue;

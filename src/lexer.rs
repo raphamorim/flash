@@ -29,6 +29,7 @@ pub enum TokenKind {
     Backtick,      // `
     Comment,       // #
     CmdSubst,      // $(
+    ArithSubst,    // $((
     ExtGlob(char), // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
@@ -345,13 +346,26 @@ impl Lexer {
                 }
             }
             '$' => {
-                // Check for command substitution $( syntax
+                // Check for arithmetic expansion $(( syntax
                 if self.peek_char() == '(' {
-                    self.read_char(); // Consume the '('
-                    Token {
-                        kind: TokenKind::CmdSubst,
-                        value: "$(".to_string(),
-                        position: current_position,
+                    // Look ahead to see if it's $(( for arithmetic expansion
+                    if self.position + 2 < self.input.len() && self.input[self.position + 2] == '('
+                    {
+                        self.read_char(); // Consume first '('
+                        self.read_char(); // Consume second '('
+                        Token {
+                            kind: TokenKind::ArithSubst,
+                            value: "$((".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Regular command substitution $(
+                        self.read_char(); // Consume the '('
+                        Token {
+                            kind: TokenKind::CmdSubst,
+                            value: "$(".to_string(),
+                            position: current_position,
+                        }
                     }
                 } else {
                     Token {

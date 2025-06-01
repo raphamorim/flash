@@ -32,6 +32,9 @@ pub enum Node {
     CommandSubstitution {
         command: Box<Node>,
     },
+    ArithmeticExpansion {
+        expression: String,
+    },
     Subshell {
         list: Box<Node>,
     },
@@ -318,6 +321,7 @@ impl Parser {
             TokenKind::Quote => self.parse_quoted_string(TokenKind::Quote),
             TokenKind::SingleQuote => self.parse_quoted_string(TokenKind::SingleQuote),
             TokenKind::CmdSubst => self.parse_command_substitution(),
+            TokenKind::ArithSubst => self.parse_arithmetic_expansion(),
             TokenKind::Word(ref word) => {
                 let value = word.clone();
                 self.next_token();
@@ -844,6 +848,11 @@ impl Parser {
                 let cmd_subst = self.parse_command_substitution();
                 Box::new(cmd_subst)
             }
+            TokenKind::ArithSubst => {
+                // Handle arithmetic expansion like $((...))
+                let arith_subst = self.parse_arithmetic_expansion();
+                Box::new(arith_subst)
+            }
             TokenKind::Word(ref word) => {
                 let value = word.clone();
                 self.next_token(); // Skip value
@@ -1275,6 +1284,52 @@ impl Parser {
         Node::CommandSubstitution {
             command: Box::new(command_node),
         }
+    }
+
+    pub fn parse_arithmetic_expansion(&mut self) -> Node {
+        self.next_token(); // Skip '$(('
+
+        let mut expression = String::new();
+        let mut paren_count = 2; // We start with 2 open parentheses
+
+        // Read until we find the matching closing parentheses
+        while paren_count > 0 && self.current_token.kind != TokenKind::EOF {
+            match &self.current_token.kind {
+                TokenKind::LParen => {
+                    paren_count += 1;
+                    expression.push('(');
+                }
+                TokenKind::RParen => {
+                    paren_count -= 1;
+                    if paren_count > 0 {
+                        expression.push(')');
+                    }
+                }
+                TokenKind::Word(word) => {
+                    expression.push_str(word);
+                }
+                TokenKind::Dollar => {
+                    expression.push('$');
+                }
+                TokenKind::Assignment => {
+                    expression.push('=');
+                }
+                _ => {
+                    // Add the token value as-is
+                    expression.push_str(&self.current_token.value);
+                }
+            }
+
+            if paren_count > 0 {
+                self.next_token();
+            }
+        }
+
+        if paren_count == 0 {
+            self.next_token(); // Skip the final '))'
+        }
+
+        Node::ArithmeticExpansion { expression }
     }
 
     // Enhanced version to handle multiple variable assignments
