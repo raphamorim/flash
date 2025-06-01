@@ -12,21 +12,25 @@ use tempfile::tempdir;
 /// Get the path to the flash binary, handling cross-compilation targets
 fn get_flash_binary_path() -> std::path::PathBuf {
     let current_dir = std::env::current_dir().unwrap();
-    
+
     // First try the target-specific path (for cross-compilation)
     if let Ok(target) = std::env::var("CARGO_BUILD_TARGET") {
-        let target_path = current_dir.join("target").join(target).join("release").join("flash");
+        let target_path = current_dir
+            .join("target")
+            .join(target)
+            .join("release")
+            .join("flash");
         if target_path.exists() {
             return target_path;
         }
     }
-    
+
     // Fall back to the default path
     let default_path = current_dir.join("target/release/flash");
     if default_path.exists() {
         return default_path;
     }
-    
+
     // If neither exists, try to find any flash binary in target directories
     let target_dir = current_dir.join("target");
     if let Ok(entries) = fs::read_dir(&target_dir) {
@@ -40,7 +44,7 @@ fn get_flash_binary_path() -> std::path::PathBuf {
             }
         }
     }
-    
+
     // Last resort: return the default path (will fail if it doesn't exist)
     default_path
 }
