@@ -317,86 +317,147 @@ impl Parser {
 
     // Helper method to parse assignment values (extracted from parse_assignment)
     fn parse_assignment_value(&mut self) -> Node {
+        // First, check if this is a simple single-token case
         match self.current_token.kind {
-            TokenKind::Quote => self.parse_quoted_string(TokenKind::Quote),
-            TokenKind::SingleQuote => self.parse_quoted_string(TokenKind::SingleQuote),
-            TokenKind::CmdSubst => self.parse_command_substitution(),
-            TokenKind::ArithSubst => self.parse_arithmetic_expansion(),
-            TokenKind::Word(ref word) => {
-                let value = word.clone();
-                self.next_token();
-                Node::StringLiteral(value)
-            }
-            // Handle keywords as assignment values
-            TokenKind::Continue => {
-                self.next_token();
-                Node::StringLiteral("continue".to_string())
-            }
-            TokenKind::Break => {
-                self.next_token();
-                Node::StringLiteral("break".to_string())
-            }
-            TokenKind::If => {
-                self.next_token();
-                Node::StringLiteral("if".to_string())
-            }
-            TokenKind::Then => {
-                self.next_token();
-                Node::StringLiteral("then".to_string())
-            }
-            TokenKind::Else => {
-                self.next_token();
-                Node::StringLiteral("else".to_string())
-            }
-            TokenKind::Elif => {
-                self.next_token();
-                Node::StringLiteral("elif".to_string())
-            }
-            TokenKind::Fi => {
-                self.next_token();
-                Node::StringLiteral("fi".to_string())
-            }
-            TokenKind::For => {
-                self.next_token();
-                Node::StringLiteral("for".to_string())
-            }
-            TokenKind::While => {
-                self.next_token();
-                Node::StringLiteral("while".to_string())
-            }
-            TokenKind::Do => {
-                self.next_token();
-                Node::StringLiteral("do".to_string())
-            }
-            TokenKind::Done => {
-                self.next_token();
-                Node::StringLiteral("done".to_string())
-            }
-            TokenKind::In => {
-                self.next_token();
-                Node::StringLiteral("in".to_string())
-            }
-            TokenKind::Function => {
-                self.next_token();
-                Node::StringLiteral("function".to_string())
-            }
-            TokenKind::Export => {
-                self.next_token();
-                Node::StringLiteral("export".to_string())
-            }
-            TokenKind::Dollar => {
-                // Handle variable references like $1, $VAR, etc.
-                let mut var_ref = "$".to_string();
-                self.next_token(); // Skip $
+            TokenKind::Quote => return self.parse_quoted_string(TokenKind::Quote),
+            TokenKind::SingleQuote => return self.parse_quoted_string(TokenKind::SingleQuote),
+            TokenKind::CmdSubst => return self.parse_command_substitution(),
+            TokenKind::ArithSubst => return self.parse_arithmetic_expansion(),
+            _ => {}
+        }
 
-                if let TokenKind::Word(ref word) = self.current_token.kind {
-                    var_ref.push_str(word);
-                    self.next_token(); // Skip variable name
+        // For complex cases with multiple tokens, build a concatenated string
+        let mut result = String::new();
+        let mut has_tokens = false;
+
+        // Continue reading tokens until we hit a statement terminator
+        while !matches!(
+            self.current_token.kind,
+            TokenKind::Semicolon
+                | TokenKind::Newline
+                | TokenKind::EOF
+                | TokenKind::Pipe
+                | TokenKind::And
+                | TokenKind::Or
+        ) {
+            has_tokens = true;
+            match self.current_token.kind {
+                TokenKind::Quote => {
+                    if let Node::StringLiteral(s) = self.parse_quoted_string(TokenKind::Quote) {
+                        result.push_str(&s);
+                    }
                 }
-
-                Node::StringLiteral(var_ref)
+                TokenKind::SingleQuote => {
+                    if let Node::StringLiteral(s) = self.parse_quoted_string(TokenKind::SingleQuote)
+                    {
+                        result.push_str(&s);
+                    }
+                }
+                TokenKind::CmdSubst => {
+                    // For command substitution in concatenated context, preserve the syntax
+                    let cmd_node = self.parse_command_substitution();
+                    if let Node::CommandSubstitution { .. } = cmd_node {
+                        // We'll need to handle this during evaluation
+                        result.push_str("$(...)"); // Placeholder for now
+                    }
+                }
+                TokenKind::ArithSubst => {
+                    // For arithmetic expansion in concatenated context, preserve the syntax
+                    let arith_node = self.parse_arithmetic_expansion();
+                    if let Node::ArithmeticExpansion { expression } = arith_node {
+                        result.push_str(&format!("$(({}))", expression));
+                    }
+                }
+                TokenKind::Dollar => {
+                    // Handle variable expansion
+                    result.push('$');
+                    self.next_token(); // Skip $
+                    if let TokenKind::Word(var_name) = &self.current_token.kind {
+                        result.push_str(var_name);
+                        self.next_token();
+                    }
+                }
+                TokenKind::Word(ref word) => {
+                    result.push_str(word);
+                    self.next_token();
+                }
+                // Handle keywords as assignment values
+                TokenKind::Continue => {
+                    result.push_str("continue");
+                    self.next_token();
+                }
+                TokenKind::Break => {
+                    result.push_str("break");
+                    self.next_token();
+                }
+                TokenKind::If => {
+                    result.push_str("if");
+                    self.next_token();
+                }
+                TokenKind::Then => {
+                    result.push_str("then");
+                    self.next_token();
+                }
+                TokenKind::Else => {
+                    result.push_str("else");
+                    self.next_token();
+                }
+                TokenKind::Elif => {
+                    result.push_str("elif");
+                    self.next_token();
+                }
+                TokenKind::Fi => {
+                    result.push_str("fi");
+                    self.next_token();
+                }
+                TokenKind::For => {
+                    result.push_str("for");
+                    self.next_token();
+                }
+                TokenKind::While => {
+                    result.push_str("while");
+                    self.next_token();
+                }
+                TokenKind::Do => {
+                    result.push_str("do");
+                    self.next_token();
+                }
+                TokenKind::Done => {
+                    result.push_str("done");
+                    self.next_token();
+                }
+                TokenKind::Until => {
+                    result.push_str("until");
+                    self.next_token();
+                }
+                TokenKind::In => {
+                    result.push_str("in");
+                    self.next_token();
+                }
+                TokenKind::Function => {
+                    result.push_str("function");
+                    self.next_token();
+                }
+                TokenKind::Return => {
+                    result.push_str("return");
+                    self.next_token();
+                }
+                TokenKind::Export => {
+                    result.push_str("export");
+                    self.next_token();
+                }
+                _ => {
+                    // Stop on any other token
+                    break;
+                }
             }
-            _ => Node::StringLiteral(String::new()),
+        }
+
+        if has_tokens {
+            Node::StringLiteral(result)
+        } else {
+            // No tokens found, return empty string
+            Node::StringLiteral(String::new())
         }
     }
 

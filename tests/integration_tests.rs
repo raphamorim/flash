@@ -973,3 +973,60 @@ echo *.nonexistent"#,
 
     assert!(output.status.success());
 }
+
+#[test]
+fn test_flashrc_variable_expansion() {
+    let temp_dir = tempdir().unwrap();
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+
+    let flashrc_path = home_dir.join(".flashrc");
+    let script_path = temp_dir.path().join("test_gopath.sh");
+
+    // Create a flashrc file with GOPATH export using $HOME expansion
+    fs::write(
+        &flashrc_path,
+        r#"export GOPATH=$HOME/go
+export CUSTOM_PATH=/usr/local/bin:$HOME/bin"#,
+    )
+    .unwrap();
+
+    // Create a script that checks if GOPATH was set correctly
+    fs::write(
+        &script_path,
+        r#"echo "GOPATH: $GOPATH"
+echo "CUSTOM_PATH: $CUSTOM_PATH"
+if [ -n "$GOPATH" ]; then
+    echo "GOPATH is set"
+else
+    echo "GOPATH is not set"
+fi"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = get_flash_binary_path();
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .env("HOME", &home_dir)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    println!("stdout: {}", stdout);
+    println!("stderr: {}", stderr);
+
+    // Check that GOPATH was expanded correctly
+    let expected_gopath = format!("{}/go", home_dir.display());
+    assert!(stdout.contains(&format!("GOPATH: {}", expected_gopath)));
+    assert!(stdout.contains("GOPATH is set"));
+
+    // Check that CUSTOM_PATH was expanded correctly
+    let expected_custom_path = format!("/usr/local/bin:{}/bin", home_dir.display());
+    assert!(stdout.contains(&format!("CUSTOM_PATH: {}", expected_custom_path)));
+
+    assert!(output.status.success());
+}
