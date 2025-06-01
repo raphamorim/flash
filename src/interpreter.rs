@@ -74,6 +74,7 @@ impl Evaluator for DefaultEvaluator {
                 args,
                 redirects,
             } => self.evaluate_function_call(name, args, redirects, interpreter),
+            Node::Return { value } => self.evaluate_return(value, interpreter),
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
@@ -104,21 +105,81 @@ impl DefaultEvaluator {
         if let Some(body) = interpreter.functions.get(name).cloned() {
             // Set up function arguments as positional parameters
             let old_args = interpreter.args.clone();
+            let old_return_value = interpreter.return_value;
             let mut new_args = vec![name.to_string()]; // $0 is function name
             new_args.extend(args.iter().cloned());
             interpreter.args = new_args;
+            interpreter.return_value = None; // Clear any previous return value
 
             // Execute function body
             let result = interpreter.evaluate_with_evaluator(&body, self);
 
-            // Restore original arguments
-            interpreter.args = old_args;
+            // Check if function returned early
+            let final_result = match result {
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
+                    // Check if this is a return statement
+                    if let Some(msg) = e.to_string().strip_prefix("return:") {
+                        if let Ok(return_code) = msg.parse::<i32>() {
+                            Ok(return_code)
+                        } else {
+                            Ok(0)
+                        }
+                    } else {
+                        result
+                    }
+                }
+                _ => result,
+            };
 
-            result
+            // Restore original arguments and return value
+            interpreter.args = old_args;
+            interpreter.return_value = old_return_value;
+
+            final_result
         } else {
             // Function not found, treat as regular command
             self.evaluate_command(name, args, redirects, interpreter)
         }
+    }
+
+    fn evaluate_return(
+        &mut self,
+        value: &Option<Box<Node>>,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        let return_code = match value {
+            Some(val) => {
+                // Evaluate the return value
+                match val.as_ref() {
+                    Node::StringLiteral(string_value) => {
+                        let expanded_value = interpreter.expand_variables(string_value);
+                        expanded_value.parse::<i32>().unwrap_or(0)
+                    }
+                    Node::CommandSubstitution { command } => {
+                        // Execute command substitution and use its exit code
+                        interpreter.evaluate_with_evaluator(command, self)?
+                    }
+                    _ => {
+                        // For other node types, evaluate them and use the result
+                        interpreter.evaluate_with_evaluator(val, self)?
+                    }
+                }
+            }
+            None => {
+                // No return value specified, use last exit code
+                interpreter.last_exit_code
+            }
+        };
+
+        // Set the return value in the interpreter
+        interpreter.return_value = Some(return_code);
+
+        // Return a special error code to indicate early return from function
+        // We'll use a custom error type for this
+        Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            format!("return:{}", return_code),
+        ))
     }
 
     fn evaluate_command(
@@ -128,6 +189,11 @@ impl DefaultEvaluator {
         redirects: &[Redirect],
         interpreter: &mut Interpreter,
     ) -> Result<i32, io::Error> {
+        // First check if this is a function call
+        if interpreter.functions.contains_key(name) {
+            return self.evaluate_function_call(name, args, redirects, interpreter);
+        }
+
         // Handle built-in commands
         match name {
             "cd" => {
@@ -217,6 +283,14 @@ impl DefaultEvaluator {
                     args[0].parse::<i32>().unwrap_or(0)
                 };
                 std::process::exit(exit_code);
+            }
+            "true" => {
+                // Built-in true command
+                Ok(0)
+            }
+            "false" => {
+                // Built-in false command
+                Ok(1)
             }
             _ => {
                 // External command
@@ -376,7 +450,19 @@ impl DefaultEvaluator {
         let mut last_exit_code = 0;
 
         for (i, statement) in statements.iter().enumerate() {
-            last_exit_code = interpreter.evaluate_with_evaluator(statement, self)?;
+            match interpreter.evaluate_with_evaluator(statement, self) {
+                Ok(code) => {
+                    last_exit_code = code;
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {
+                    // Check if this is a return statement - propagate it up
+                    if e.to_string().starts_with("return:") {
+                        return Err(io::Error::new(e.kind(), e.to_string()));
+                    }
+                    return Err(io::Error::new(e.kind(), e.to_string()));
+                }
+                Err(e) => return Err(e),
+            }
 
             if i < operators.len() {
                 match operators[i].as_str() {
@@ -674,7 +760,8 @@ pub struct Interpreter {
     pub history: Vec<String>,
     pub history_file: Option<String>,
     pub rc_file: Option<String>,
-    pub args: Vec<String>, // Command line arguments ($0, $1, $2, ...)
+    pub args: Vec<String>,         // Command line arguments ($0, $1, $2, ...)
+    pub return_value: Option<i32>, // Track return values from functions
 }
 
 impl Default for Interpreter {
@@ -731,6 +818,7 @@ impl Interpreter {
             history_file,
             rc_file,
             args: Vec::new(), // Initialize empty args, will be set when running scripts
+            return_value: None, // Initialize return value as None
         };
 
         // Load and execute flashrc file if it exists
@@ -1996,12 +2084,13 @@ impl Interpreter {
             if c == '$' && chars.peek().is_some() {
                 // Check if the next character is a valid start of a variable expansion
                 let next_char = *chars.peek().unwrap();
-                if !matches!(next_char, 'a'..='z' | 'A'..='Z' | '_' | '0'..='9' | '{' | '(' | '#' | '@' | '*' | '?' | '$') {
+                if !matches!(next_char, 'a'..='z' | 'A'..='Z' | '_' | '0'..='9' | '{' | '(' | '#' | '@' | '*' | '?' | '$')
+                {
                     // Not a valid variable start, treat $ as literal
                     result.push(c);
                     continue;
                 }
-                
+
                 // Check for command substitution $(...)
                 if let Some(&'(') = chars.peek() {
                     chars.next(); // Skip '('
@@ -2038,7 +2127,7 @@ impl Interpreter {
                     chars.next(); // Skip '{'
 
                     // Read until closing brace
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == '}' {
                             break;
                         }
@@ -2117,6 +2206,7 @@ impl Interpreter {
             history_file: None,
             rc_file: None,
             args: self.args.clone(),
+            return_value: None,
         };
 
         let mut evaluator = DefaultEvaluator;
@@ -2142,14 +2232,14 @@ mod tests {
             history_file: None,
             rc_file: None,
             args: Vec::new(),
+            return_value: None,
         };
 
         // Set PWD variable like the real interpreter does
         if let Ok(current_dir) = std::env::current_dir() {
-            interpreter.variables.insert(
-                "PWD".to_string(),
-                current_dir.to_string_lossy().to_string(),
-            );
+            interpreter
+                .variables
+                .insert("PWD".to_string(), current_dir.to_string_lossy().to_string());
         }
 
         // Test default prompt
@@ -2177,7 +2267,7 @@ mod tests {
         interpreter
             .variables
             .insert("PROMPT".to_string(), "flash:${TESTVAR}$ ".to_string());
-        
+
         let prompt = interpreter.get_prompt();
         assert_eq!(prompt, "flash:/test/path$ ");
     }
@@ -2315,10 +2405,15 @@ mod tests {
         // Test command substitution in variable assignment first
         let result = interpreter.execute("TEST_VAR=$(echo test)").unwrap();
         assert_eq!(result, 0);
-        assert_eq!(interpreter.variables.get("TEST_VAR"), Some(&"test".to_string()));
+        assert_eq!(
+            interpreter.variables.get("TEST_VAR"),
+            Some(&"test".to_string())
+        );
 
         // Test simple conditional with pre-assigned variable
-        let result = interpreter.execute("if [ \"$TEST_VAR\" = \"test\" ]; then X=success; fi").unwrap();
+        let result = interpreter
+            .execute("if [ \"$TEST_VAR\" = \"test\" ]; then X=success; fi")
+            .unwrap();
         assert_eq!(result, 0);
         assert_eq!(interpreter.variables.get("X"), Some(&"success".to_string()));
 

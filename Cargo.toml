@@ -29,6 +29,7 @@ libc = { version = "0.2", optional = true }
 [dev-dependencies]
 tempfile = "3.19.1"
 pretty_assertions = "1.4.1"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 # We use `opt-level = "s"` as it significantly reduces binary size.
 [profile.release]
@@ -45,3 +46,7 @@ split-debuginfo = "unpacked"
 lto = false
 incremental = true
 opt-level = 0
+
+[[bench]]
+name = "flash_benchmarks"
+harness = false

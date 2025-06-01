@@ -8,6 +8,9 @@
 pub mod lexer;
 pub mod parser;
 
+// mod lexer_simd;
+// mod simd;
+
 #[cfg(feature = "interpreter")]
 mod flash;
 #[cfg(feature = "formatter")]

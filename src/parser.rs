@@ -70,6 +70,9 @@ pub enum Node {
         name: String,
         value: Option<Box<Node>>, // None for export without assignment (export VAR)
     },
+    Return {
+        value: Option<Box<Node>>,
+    },
 }
 
 /// Redirection types
@@ -242,6 +245,7 @@ impl Parser {
             }
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
             TokenKind::Export => Some(self.parse_export()),
+            TokenKind::Return => Some(self.parse_return()),
             _ => None,
         }
     }
@@ -287,6 +291,25 @@ impl Parser {
             // Export without assignment (export VAR)
             Node::Export { name, value: None }
         }
+    }
+
+    // Parse return statement: return [value]
+    fn parse_return(&mut self) -> Node {
+        self.next_token(); // Skip 'return' keyword
+
+        // Check if there's a return value
+        let value = match self.current_token.kind {
+            TokenKind::Semicolon | TokenKind::Newline | TokenKind::EOF | TokenKind::RBrace => {
+                // No return value
+                None
+            }
+            _ => {
+                // Parse the return value
+                Some(Box::new(self.parse_assignment_value()))
+            }
+        };
+
+        Node::Return { value }
     }
 
     // Helper method to parse assignment values (extracted from parse_assignment)
@@ -356,6 +379,18 @@ impl Parser {
             TokenKind::Export => {
                 self.next_token();
                 Node::StringLiteral("export".to_string())
+            }
+            TokenKind::Dollar => {
+                // Handle variable references like $1, $VAR, etc.
+                let mut var_ref = "$".to_string();
+                self.next_token(); // Skip $
+
+                if let TokenKind::Word(ref word) = self.current_token.kind {
+                    var_ref.push_str(word);
+                    self.next_token(); // Skip variable name
+                }
+
+                Node::StringLiteral(var_ref)
             }
             _ => Node::StringLiteral(String::new()),
         }
