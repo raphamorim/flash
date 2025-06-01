@@ -61,7 +61,7 @@ Legends:
 |                       | Coprocesses (`coproc`)                          | ❌          | ✅   | ❌  | |
 | **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | ✅          | ✅   | ✅  | |
 |                       | `shopt`, `declare`, `typeset`                   | ❌          | ✅   | ❌  | Bash-only |
-|                       | `let`, `local`, `export`                        | ✅          | ✅   | ❌  | |
+|                       | `let`, `local`, `export`                        | ✅          | ✅   | ✅  | |
 | **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ❌  | |
 |                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
 | **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ❌  | |

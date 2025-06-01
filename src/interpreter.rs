@@ -3051,6 +3051,9 @@ mod tests {
 
     #[test]
     fn test_capture_command_output_builtin() {
+        // Save the original working directory to restore it after the test
+        let original_dir = std::env::current_dir().unwrap();
+
         let mut interpreter = Interpreter::new();
         let mut evaluator = DefaultEvaluator;
 
@@ -3076,8 +3079,15 @@ mod tests {
         let output = interpreter
             .capture_command_output(&pwd_node, &mut evaluator)
             .unwrap();
+
+        // Get current directory at the time of the test
         let current_dir = std::env::current_dir().unwrap();
+
+        // Both the builtin pwd and env::current_dir() should return the same result
         assert_eq!(output, current_dir.to_string_lossy().to_string());
+
+        // Restore original working directory to avoid affecting other tests
+        let _ = std::env::set_current_dir(original_dir);
     }
 
     #[test]
