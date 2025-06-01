@@ -1,6 +1,6 @@
 [package]
 name = "flash"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 description = "Shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"

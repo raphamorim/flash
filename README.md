@@ -1,4 +1,4 @@
-# Flash (work in progress)
+# ϟ Flash (work in progress)
 
 *A shell parser, formatter, and interpreter written in Rust.*
 
