@@ -3068,41 +3068,44 @@ mod tests {
 
         // Test capturing pwd output - create a controlled test environment
         use tempfile::tempdir;
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path();
 
-        // Save original directory
+        // Save original directory first
         let original_dir = std::env::current_dir().unwrap();
 
-        // Change to temp directory for this test
-        std::env::set_current_dir(temp_path).unwrap();
+        {
+            let temp_dir = tempdir().unwrap();
+            let temp_path = temp_dir.path();
 
-        let pwd_node = Node::Command {
-            name: "pwd".to_string(),
-            args: vec![],
-            redirects: vec![],
-        };
+            // Change to temp directory for this test
+            std::env::set_current_dir(temp_path).unwrap();
 
-        let output = interpreter
-            .capture_command_output(&pwd_node, &mut evaluator)
-            .unwrap();
+            let pwd_node = Node::Command {
+                name: "pwd".to_string(),
+                args: vec![],
+                redirects: vec![],
+            };
 
-        // Get current directory after changing to temp
-        let current_dir = std::env::current_dir().unwrap();
+            let output = interpreter
+                .capture_command_output(&pwd_node, &mut evaluator)
+                .unwrap();
 
-        // Canonicalize both paths to handle symlink differences (e.g., /tmp vs /private/tmp on macOS)
-        let output_canonical = std::path::Path::new(&output)
-            .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::from(&output));
-        let current_canonical = current_dir
-            .canonicalize()
-            .unwrap_or_else(|_| current_dir.clone());
+            // Get current directory after changing to temp
+            let current_dir = std::env::current_dir().unwrap();
 
-        // Both the builtin pwd and env::current_dir() should return the same canonical path
-        assert_eq!(output_canonical, current_canonical);
+            // Canonicalize both paths to handle symlink differences (e.g., /tmp vs /private/tmp on macOS)
+            let output_canonical = std::path::Path::new(&output)
+                .canonicalize()
+                .unwrap_or_else(|_| std::path::PathBuf::from(&output));
+            let current_canonical = current_dir
+                .canonicalize()
+                .unwrap_or_else(|_| current_dir.clone());
 
-        // Restore original working directory
-        std::env::set_current_dir(original_dir).unwrap();
+            // Both the builtin pwd and env::current_dir() should return the same canonical path
+            assert_eq!(output_canonical, current_canonical);
+
+            // Restore original working directory BEFORE temp_dir is dropped
+            std::env::set_current_dir(&original_dir).unwrap();
+        } // temp_dir is dropped here, but we're already back in the original directory
     }
 
     #[test]
@@ -3644,30 +3647,34 @@ mod tests {
         );
 
         // Test path completion after command
-        let temp_dir = tempdir().unwrap();
-        let temp_path = temp_dir.path();
-        fs::write(temp_path.join("testfile.txt"), "content").unwrap();
-
         let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(temp_path).unwrap();
 
-        let (suffixes, full_names) = interpreter.generate_completions("cat test", 8);
+        {
+            let temp_dir = tempdir().unwrap();
+            let temp_path = temp_dir.path();
+            fs::write(temp_path.join("testfile.txt"), "content").unwrap();
 
-        // Check if completions include something related to testfile.txt
-        let has_testfile = full_names
-            .iter()
-            .any(|c| c.contains("testfile") || c == "testfile.txt");
-        let has_testfile_suffix = suffixes
-            .iter()
-            .any(|c| c.contains("file") || c == "file.txt");
-        assert!(
-            has_testfile || has_testfile_suffix,
-            "Expected completions to include 'testfile.txt', got full_names: {:?}, suffixes: {:?}",
-            full_names,
-            suffixes
-        );
+            env::set_current_dir(temp_path).unwrap();
 
-        env::set_current_dir(original_dir).unwrap();
+            let (suffixes, full_names) = interpreter.generate_completions("cat test", 8);
+
+            // Check if completions include something related to testfile.txt
+            let has_testfile = full_names
+                .iter()
+                .any(|c| c.contains("testfile") || c == "testfile.txt");
+            let has_testfile_suffix = suffixes
+                .iter()
+                .any(|c| c.contains("file") || c == "file.txt");
+            assert!(
+                has_testfile || has_testfile_suffix,
+                "Expected completions to include 'testfile.txt', got full_names: {:?}, suffixes: {:?}",
+                full_names,
+                suffixes
+            );
+
+            // Restore original working directory BEFORE temp_dir is dropped
+            env::set_current_dir(&original_dir).unwrap();
+        } // temp_dir is dropped here, but we're already back in the original directory
     }
 
     #[test]
