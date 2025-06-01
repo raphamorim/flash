@@ -3051,9 +3051,6 @@ mod tests {
 
     #[test]
     fn test_capture_command_output_builtin() {
-        // Save the original working directory to restore it after the test
-        let original_dir = std::env::current_dir().unwrap();
-
         let mut interpreter = Interpreter::new();
         let mut evaluator = DefaultEvaluator;
 
@@ -3069,7 +3066,17 @@ mod tests {
             .unwrap();
         assert_eq!(output, "hello world");
 
-        // Test capturing pwd output
+        // Test capturing pwd output - create a controlled test environment
+        use tempfile::tempdir;
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Save original directory
+        let original_dir = std::env::current_dir().unwrap();
+
+        // Change to temp directory for this test
+        std::env::set_current_dir(temp_path).unwrap();
+
         let pwd_node = Node::Command {
             name: "pwd".to_string(),
             args: vec![],
@@ -3080,14 +3087,22 @@ mod tests {
             .capture_command_output(&pwd_node, &mut evaluator)
             .unwrap();
 
-        // Get current directory at the time of the test
+        // Get current directory after changing to temp
         let current_dir = std::env::current_dir().unwrap();
 
-        // Both the builtin pwd and env::current_dir() should return the same result
-        assert_eq!(output, current_dir.to_string_lossy().to_string());
+        // Canonicalize both paths to handle symlink differences (e.g., /tmp vs /private/tmp on macOS)
+        let output_canonical = std::path::Path::new(&output)
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from(&output));
+        let current_canonical = current_dir
+            .canonicalize()
+            .unwrap_or_else(|_| current_dir.clone());
 
-        // Restore original working directory to avoid affecting other tests
-        let _ = std::env::set_current_dir(original_dir);
+        // Both the builtin pwd and env::current_dir() should return the same canonical path
+        assert_eq!(output_canonical, current_canonical);
+
+        // Restore original working directory
+        std::env::set_current_dir(original_dir).unwrap();
     }
 
     #[test]
