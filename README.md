@@ -31,7 +31,7 @@ Legends:
 |                       | Arithmetic substitution                         | ❌          | ✅   | ✅  | `$((expr))` |
 |                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
 |                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
-|                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ❌  | |
+|                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ✅  | |
 | **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ✅  | |
 |                       | `case` / `esac`                                 | ✅          | ✅   | ❌  | |
 |                       | `for` loops                                     | ✅          | ✅   | ❌  | |
