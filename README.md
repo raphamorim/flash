@@ -6,19 +6,13 @@ Flash is a fast, extensible, and hackable toolkit for working with POSIX-style s
 
 > Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but engineered from the ground up with performance and extensibility in mind.
 
+Ideally I would like to use Flash in my daily basis. It's still far from proper usage.
+
 ## Summary
 
 - [Feature Coverage](#feature-coverage)
 - [Flash as shell](#as-shell)
 - [Flash as library or shell backend](#as-library)
-
-## TODO
-
-Ideally I would like to use Flash in my daily basis. It's still far from proper usage.
-
-- [ ] Functions for parser and interop.
-- [ ] Loops for parser and interop.
-- [ ] Array index references.
 
 ## Feature Coverage
 
