@@ -4,6 +4,7 @@ version = "0.0.3"
 edition = "2024"
 description = "Shell parser, formatter, and interpreter with Bash support"
 license = "GPL-3.0-or-later"
+include = ["/src", "LICENSE", "README.md"]
 
 [lib]
 name = "flash"
