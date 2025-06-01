@@ -66,7 +66,7 @@ Legends:
 |                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
 | **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ❌  | |
 |                       | Extended globbing (`extglob`)                   | ❌          | ✅   | ❌  | Requires `shopt` |
-|                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ❌  | |
+|                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ✅  | Note for the default interpreter: it's `$FLASH_VERSION` instead |
 |                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ❌  | `source` is Bash synonym |
 
 ## As shell

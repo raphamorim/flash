@@ -1039,6 +1039,10 @@ impl Interpreter {
         variables.insert("?".to_string(), "0".to_string());
         variables.insert("SHELL".to_string(), "flash".to_string());
         variables.insert("$$".to_string(), std::process::id().to_string());
+        variables.insert(
+            "FLASH_VERSION".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
 
         let home_dir = env::var("HOME").ok();
 
@@ -4465,5 +4469,28 @@ mod tests {
         if let Some(pwd) = original_pwd {
             let _ = std::env::set_current_dir(pwd);
         }
+    }
+
+    #[test]
+    fn test_flash_version_variable() {
+        let interpreter = Interpreter::new();
+
+        // Test that FLASH_VERSION is set
+        let flash_version = interpreter.variables.get("FLASH_VERSION");
+        assert!(flash_version.is_some(), "FLASH_VERSION should be set");
+
+        let version = flash_version.unwrap();
+        assert!(!version.is_empty(), "FLASH_VERSION should not be empty");
+
+        // Test that it matches the cargo package version
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+
+        // Test that we can access it via variable expansion
+        let expanded = interpreter.expand_variables("$FLASH_VERSION");
+        assert_eq!(expanded, env!("CARGO_PKG_VERSION"));
+
+        // Test that we can access it in command substitution context
+        let expanded_braces = interpreter.expand_variables("${FLASH_VERSION}");
+        assert_eq!(expanded_braces, env!("CARGO_PKG_VERSION"));
     }
 }
