@@ -9,6 +9,42 @@ use std::fs;
 use std::process::Command;
 use tempfile::tempdir;
 
+/// Get the path to the flash binary, handling cross-compilation targets
+fn get_flash_binary_path() -> std::path::PathBuf {
+    let current_dir = std::env::current_dir().unwrap();
+    
+    // First try the target-specific path (for cross-compilation)
+    if let Ok(target) = std::env::var("CARGO_BUILD_TARGET") {
+        let target_path = current_dir.join("target").join(target).join("release").join("flash");
+        if target_path.exists() {
+            return target_path;
+        }
+    }
+    
+    // Fall back to the default path
+    let default_path = current_dir.join("target/release/flash");
+    if default_path.exists() {
+        return default_path;
+    }
+    
+    // If neither exists, try to find any flash binary in target directories
+    let target_dir = current_dir.join("target");
+    if let Ok(entries) = fs::read_dir(&target_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                let release_dir = entry.path().join("release");
+                let binary_path = release_dir.join("flash");
+                if binary_path.exists() {
+                    return binary_path;
+                }
+            }
+        }
+    }
+    
+    // Last resort: return the default path (will fail if it doesn't exist)
+    default_path
+}
+
 #[test]
 fn test_script_file_execution_with_positional_args() {
     let temp_dir = tempdir().unwrap();
@@ -22,10 +58,8 @@ fn test_script_file_execution_with_positional_args() {
     .unwrap();
 
     // Execute the script with arguments
-    // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    // Get the path to the flash binary (handle cross-compilation)
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -75,9 +109,7 @@ echo "Individual: $1 $2 $3""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -110,9 +142,7 @@ echo "All args: '$@'""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -144,9 +174,7 @@ echo "All: '$@'""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -173,9 +201,7 @@ fn test_piped_input_vs_script_file_priority() {
     // When both script file and stdin are available, script file should take priority
     // This tests the fix for the execution flow
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -194,9 +220,7 @@ fn test_piped_input_vs_script_file_priority() {
 fn test_command_flag_execution() {
     // Test the -c flag for direct command execution
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg("-c")
@@ -216,9 +240,7 @@ fn test_command_flag_execution() {
 fn test_nonexistent_script_file() {
     // Test error handling for non-existent script files
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg("nonexistent_script.sh")
@@ -248,9 +270,7 @@ echo "Mixed: ${TEST_VAR}_${1}_suffix""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -279,9 +299,7 @@ echo "Count: $#""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -322,9 +340,7 @@ fi"#,
 
     // Test with no arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -338,9 +354,7 @@ fi"#,
 
     // Test with one argument
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -355,9 +369,7 @@ fi"#,
 
     // Test with many arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -389,9 +401,7 @@ seq 1 2 10"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -436,9 +446,7 @@ seq 5 7"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -478,9 +486,7 @@ echo "Args provided: $@""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -527,9 +533,7 @@ fi"#,
 
     // Test with 3 arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -549,9 +553,7 @@ fi"#,
 
     // Test with no arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -594,9 +596,7 @@ echo "start variable: $start""#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -657,9 +657,7 @@ fi"#,
 
     // Test with 4 arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -679,9 +677,7 @@ fi"#,
 
     // Test with 2 arguments
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -731,9 +727,7 @@ echo *.log"#,
 
     // Run the script from the temp directory
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -785,9 +779,7 @@ echo test*.dat"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -840,9 +832,7 @@ echo file[24].txt"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -901,9 +891,7 @@ echo *.txt *.log"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)
@@ -954,9 +942,7 @@ echo *.nonexistent"#,
     .unwrap();
 
     // Get the path to the flash binary
-    let binary_path = std::env::current_dir()
-        .unwrap()
-        .join("target/release/flash");
+    let binary_path = get_flash_binary_path();
 
     let output = Command::new(&binary_path)
         .arg(&script_path)

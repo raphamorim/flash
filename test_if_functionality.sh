@@ -5,14 +5,46 @@
 
 set -e
 
-FLASH_BINARY="./target/release/flash"
+# Find the flash binary, handling cross-compilation
+find_flash_binary() {
+    # First try the target-specific path (for cross-compilation)
+    if [ -n "$CARGO_BUILD_TARGET" ]; then
+        local target_path="./target/$CARGO_BUILD_TARGET/release/flash"
+        if [ -f "$target_path" ]; then
+            echo "$target_path"
+            return
+        fi
+    fi
+    
+    # Fall back to the default path
+    local default_path="./target/release/flash"
+    if [ -f "$default_path" ]; then
+        echo "$default_path"
+        return
+    fi
+    
+    # Try to find any flash binary in target directories
+    for dir in ./target/*/release; do
+        if [ -f "$dir/flash" ]; then
+            echo "$dir/flash"
+            return
+        fi
+    done
+    
+    # Last resort: return the default path
+    echo "$default_path"
+}
+
+FLASH_BINARY=$(find_flash_binary)
 
 if [ ! -f "$FLASH_BINARY" ]; then
     echo "Error: Flash binary not found at $FLASH_BINARY"
+    echo "Available binaries:"
+    find ./target -name "flash" -type f 2>/dev/null || echo "No flash binaries found"
     exit 1
 fi
 
-echo "Testing if/elif/else functionality..."
+echo "Testing if/elif/else functionality with binary: $FLASH_BINARY"
 
 # Test 1: Simple if statement
 echo "Test 1: Simple if statement"
