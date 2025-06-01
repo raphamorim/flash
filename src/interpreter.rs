@@ -4276,22 +4276,40 @@ mod tests {
     fn test_tilde_expansion_no_home() {
         let interpreter = Interpreter::new();
 
-        // Remove HOME environment variable
+        // Save the original HOME environment variable
         let original_home = std::env::var("HOME").ok();
+
+        // Remove HOME environment variable and ensure it stays removed during the test
         unsafe {
             std::env::remove_var("HOME");
         }
 
-        // When HOME is not set, tilde should remain unchanged
-        assert_eq!(interpreter.expand_variables("~"), "~");
-        assert_eq!(interpreter.expand_variables("~/Documents"), "~/Documents");
+        // Verify HOME is actually removed
+        assert!(
+            std::env::var("HOME").is_err(),
+            "HOME should be unset for this test"
+        );
 
-        // Restore original HOME
+        // When HOME is not set, tilde should remain unchanged
+        let result1 = interpreter.expand_variables("~");
+        let result2 = interpreter.expand_variables("~/Documents");
+
+        // Restore original HOME immediately to avoid affecting other tests
         unsafe {
             if let Some(home) = original_home {
                 std::env::set_var("HOME", home);
             }
         }
+
+        // Now check the results
+        assert_eq!(
+            result1, "~",
+            "Tilde should remain unchanged when HOME is not set"
+        );
+        assert_eq!(
+            result2, "~/Documents",
+            "Tilde path should remain unchanged when HOME is not set"
+        );
     }
 
     #[test]
