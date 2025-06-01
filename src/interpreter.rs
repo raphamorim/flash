@@ -222,7 +222,8 @@ impl DefaultEvaluator {
                 let dir = if args.is_empty() {
                     env::var("HOME").unwrap_or_else(|_| ".".to_string())
                 } else {
-                    args[0].clone()
+                    // Expand variables and tilde in the directory argument
+                    interpreter.expand_variables(&args[0])
                 };
 
                 match env::set_current_dir(&dir) {
@@ -2373,6 +2374,9 @@ impl Interpreter {
     }
 
     fn expand_variables(&self, input: &str) -> String {
+        // First handle tilde expansion
+        let input = self.expand_tilde(input);
+
         let mut result = String::new();
         let mut chars = input.chars().peekable();
 
@@ -2521,6 +2525,73 @@ impl Interpreter {
                 }
             } else {
                 result.push(c);
+            }
+        }
+
+        result
+    }
+
+    /// Expand tilde (~) to home directory
+    fn expand_tilde(&self, input: &str) -> String {
+        if input.is_empty() {
+            return input.to_string();
+        }
+
+        // Get home directory
+        let home_dir = match std::env::var("HOME") {
+            Ok(home) => home,
+            Err(_) => return input.to_string(), // If HOME is not set, return unchanged
+        };
+
+        let mut result = String::new();
+        let mut chars = input.chars().peekable();
+        let mut at_word_start = true; // Track if we're at the start of a word
+
+        while let Some(c) = chars.next() {
+            if c == '~' && at_word_start {
+                // Check what follows the tilde
+                match chars.peek() {
+                    None => {
+                        // Tilde at end of string - expand to home directory
+                        result.push_str(&home_dir);
+                    }
+                    Some('/') => {
+                        // Tilde followed by slash - expand to home directory
+                        result.push_str(&home_dir);
+                    }
+                    Some(' ') | Some('\t') => {
+                        // Tilde followed by whitespace - expand to home directory
+                        result.push_str(&home_dir);
+                    }
+                    Some(_) => {
+                        // Tilde followed by other characters - could be ~username
+                        // For now, we'll only support ~ for current user
+                        // In the future, we could add support for ~username
+                        let mut username = String::new();
+                        while let Some(&ch) = chars.peek() {
+                            if ch == '/' || ch.is_whitespace() {
+                                break;
+                            }
+                            username.push(ch);
+                            chars.next();
+                        }
+
+                        if username.is_empty() {
+                            // Just ~ followed by non-slash, non-whitespace
+                            result.push_str(&home_dir);
+                        } else {
+                            // ~username - for now, treat as literal
+                            // TODO: Add support for other users' home directories
+                            result.push('~');
+                            result.push_str(&username);
+                        }
+                    }
+                }
+                at_word_start = false;
+            } else {
+                result.push(c);
+                // Update word boundary tracking
+                at_word_start = c.is_whitespace() || c == ':' || c == '=';
             }
         }
 
@@ -4082,6 +4153,267 @@ mod tests {
             }
 
             expanded_args
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_basic() {
+        let interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/test/home");
+        }
+
+        // Test basic tilde expansion
+        assert_eq!(interpreter.expand_variables("~"), "/test/home");
+        assert_eq!(
+            interpreter.expand_variables("~/Documents"),
+            "/test/home/Documents"
+        );
+        assert_eq!(
+            interpreter.expand_variables("~/bin/script"),
+            "/test/home/bin/script"
+        );
+
+        // Test tilde with spaces
+        assert_eq!(
+            interpreter.expand_variables("~ /other/path"),
+            "/test/home /other/path"
+        );
+        assert_eq!(
+            interpreter.expand_variables("path ~ more"),
+            "path /test/home more"
+        );
+
+        // Test tilde at end of string
+        assert_eq!(
+            interpreter.expand_variables("prefix ~"),
+            "prefix /test/home"
+        );
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_edge_cases() {
+        let mut interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/test/home");
+        }
+
+        // Test tilde not at word boundary (should not expand)
+        assert_eq!(interpreter.expand_variables("file~backup"), "file~backup");
+        assert_eq!(interpreter.expand_variables("test~"), "test~");
+
+        // Test multiple tildes
+        assert_eq!(
+            interpreter.expand_variables("~ and ~"),
+            "/test/home and /test/home"
+        );
+        assert_eq!(
+            interpreter.expand_variables("~/a:~/b"),
+            "/test/home/a:/test/home/b"
+        );
+
+        // Test tilde with other expansions
+        interpreter
+            .variables
+            .insert("VAR".to_string(), "value".to_string());
+        assert_eq!(interpreter.expand_variables("~/$VAR"), "/test/home/value");
+        assert_eq!(interpreter.expand_variables("$VAR/~"), "value/~"); // ~ not at start of path component
+
+        // Test empty string
+        assert_eq!(interpreter.expand_variables(""), "");
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_no_home() {
+        let interpreter = Interpreter::new();
+
+        // Remove HOME environment variable
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::remove_var("HOME");
+        }
+
+        // When HOME is not set, tilde should remain unchanged
+        assert_eq!(interpreter.expand_variables("~"), "~");
+        assert_eq!(interpreter.expand_variables("~/Documents"), "~/Documents");
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_with_username() {
+        let interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/test/home");
+        }
+
+        // Test ~username (should remain literal for now)
+        assert_eq!(interpreter.expand_variables("~user"), "~user");
+        assert_eq!(
+            interpreter.expand_variables("~user/Documents"),
+            "~user/Documents"
+        );
+        assert_eq!(interpreter.expand_variables("~root/bin"), "~root/bin");
+
+        // But ~ alone should still expand
+        assert_eq!(interpreter.expand_variables("~"), "/test/home");
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_in_export() {
+        let mut interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/test/home");
+        }
+
+        // Test tilde expansion in export statements
+        interpreter.execute("export GOPATH=~/go").unwrap();
+        assert_eq!(
+            interpreter.variables.get("GOPATH"),
+            Some(&"/test/home/go".to_string())
+        );
+
+        interpreter
+            .execute("export PATH=~/bin:/usr/local/bin")
+            .unwrap();
+        assert_eq!(
+            interpreter.variables.get("PATH"),
+            Some(&"/test/home/bin:/usr/local/bin".to_string())
+        );
+
+        // Test mixed tilde and variable expansion
+        interpreter
+            .execute("export COMPLEX=~/bin:$GOPATH/bin")
+            .unwrap();
+        assert_eq!(
+            interpreter.variables.get("COMPLEX"),
+            Some(&"/test/home/bin:/test/home/go/bin".to_string())
+        );
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_expansion_in_commands() {
+        let interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/test/home");
+        }
+
+        // Test that tilde expansion works in command arguments
+        // We can't easily test actual command execution, but we can test variable expansion
+        assert_eq!(
+            interpreter.expand_variables("ls ~/Documents"),
+            "ls /test/home/Documents"
+        );
+        assert_eq!(
+            interpreter.expand_variables("cd ~ && pwd"),
+            "cd /test/home && pwd"
+        );
+        assert_eq!(
+            interpreter.expand_variables("cp file ~/backup/"),
+            "cp file /test/home/backup/"
+        );
+
+        // Restore original HOME
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_cd_with_tilde_expansion() {
+        let mut interpreter = Interpreter::new();
+
+        // Set a known HOME directory for testing
+        let original_home = std::env::var("HOME").ok();
+        let original_pwd = std::env::current_dir().ok();
+
+        unsafe {
+            std::env::set_var("HOME", "/tmp");
+        }
+
+        // Test cd with tilde
+        let result = interpreter.execute("cd ~");
+        assert!(result.is_ok());
+
+        // Check that PWD was updated (handle symlinks like /tmp -> /private/tmp on macOS)
+        let pwd = interpreter.variables.get("PWD").unwrap();
+        assert!(pwd.ends_with("/tmp") || pwd == "/tmp");
+
+        // Test cd with tilde and subdirectory
+        // Note: We can't actually test this without creating the directory,
+        // but we can test that the expansion happens correctly
+
+        // Restore original state
+        unsafe {
+            if let Some(home) = original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        if let Some(pwd) = original_pwd {
+            let _ = std::env::set_current_dir(pwd);
         }
     }
 }

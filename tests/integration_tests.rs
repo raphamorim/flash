@@ -1030,3 +1030,53 @@ fi"#,
 
     assert!(output.status.success());
 }
+
+#[test]
+fn test_tilde_expansion() {
+    let temp_dir = tempdir().unwrap();
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+
+    let script_path = temp_dir.path().join("test_tilde.sh");
+
+    // Create a script that tests tilde expansion
+    fs::write(
+        &script_path,
+        r#"echo "Home: ~"
+echo "Documents: ~/Documents"
+echo "Path: ~/bin:/usr/local/bin"
+export GOPATH=~/go
+echo "GOPATH: $GOPATH"
+export COMPLEX=~/bin:~/local/bin
+echo "COMPLEX: $COMPLEX""#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = get_flash_binary_path();
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .env("HOME", &home_dir)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    println!("stdout: {}", stdout);
+    println!("stderr: {}", stderr);
+
+    // Check that tilde was expanded correctly
+    let expected_home = home_dir.display().to_string();
+    assert!(stdout.contains(&format!("Home: {}", expected_home)));
+    assert!(stdout.contains(&format!("Documents: {}/Documents", expected_home)));
+    assert!(stdout.contains(&format!("Path: {}/bin:/usr/local/bin", expected_home)));
+    assert!(stdout.contains(&format!("GOPATH: {}/go", expected_home)));
+    assert!(stdout.contains(&format!(
+        "COMPLEX: {}/bin:{}/local/bin",
+        expected_home, expected_home
+    )));
+
+    assert!(output.status.success());
+}
