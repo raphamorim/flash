@@ -221,6 +221,7 @@ impl Formatter {
 
             // Simple string literal doesn't need formatting
             Node::StringLiteral(_) => false,
+            Node::SingleQuotedString(_) => false,
 
             // Simple comment doesn't need formatting
             Node::Comment(_) => false,
@@ -400,6 +401,13 @@ impl Formatter {
                 } else {
                     result.push_str(value);
                 }
+                result
+            }
+            Node::SingleQuotedString(value) => {
+                let mut result = String::new();
+                result.push('\'');
+                result.push_str(value);
+                result.push('\'');
                 result
             }
             Node::Subshell { list } => {

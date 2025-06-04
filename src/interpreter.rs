@@ -51,6 +51,7 @@ impl Evaluator for DefaultEvaluator {
                 self.evaluate_arithmetic_expansion(expression, interpreter)
             }
             Node::StringLiteral(_value) => Ok(0),
+            Node::SingleQuotedString(_value) => Ok(0),
             Node::Subshell { list } => interpreter.evaluate_with_evaluator(list, self),
             Node::Comment(_) => Ok(0),
             Node::ExtGlobPattern {
@@ -421,7 +422,16 @@ impl DefaultEvaluator {
                 }
 
                 match command.status() {
-                    Ok(status) => Ok(status.code().unwrap_or(0)),
+                    Ok(status) => {
+                        // Update PWD in case the external command changed the working directory
+                        if let Ok(current_dir) = env::current_dir() {
+                            interpreter.variables.insert(
+                                "PWD".to_string(),
+                                current_dir.to_string_lossy().to_string(),
+                            );
+                        }
+                        Ok(status.code().unwrap_or(0))
+                    }
                     Err(_) => {
                         eprintln!("{}: command not found", name);
                         Ok(127)
@@ -449,6 +459,17 @@ impl DefaultEvaluator {
                         if !name.is_empty() {
                             unsafe {
                                 env::set_var(name, &expanded_value);
+                            }
+                        }
+                    }
+                    Node::SingleQuotedString(string_value) => {
+                        // Single-quoted strings should not have variable expansion
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), string_value.clone());
+                        if !name.is_empty() {
+                            unsafe {
+                                env::set_var(name, string_value);
                             }
                         }
                     }
@@ -623,6 +644,12 @@ impl DefaultEvaluator {
                 interpreter
                     .variables
                     .insert(name.to_string(), expanded_value);
+            }
+            Node::SingleQuotedString(string_value) => {
+                // Single-quoted strings should not have variable expansion
+                interpreter
+                    .variables
+                    .insert(name.to_string(), string_value.clone());
             }
             Node::CommandSubstitution { command } => {
                 let output = interpreter.capture_command_output(command, self)?;
@@ -1043,6 +1070,11 @@ impl Interpreter {
             "FLASH_VERSION".to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
         );
+
+        // Initialize PWD to current working directory
+        if let Ok(current_dir) = env::current_dir() {
+            variables.insert("PWD".to_string(), current_dir.to_string_lossy().to_string());
+        }
 
         let home_dir = env::var("HOME").ok();
 
@@ -2890,6 +2922,36 @@ mod tests {
     }
 
     #[test]
+    fn test_pwd_updates_in_prompt_after_cd() {
+        let mut interpreter = Interpreter::new();
+
+        // Set up a prompt that uses PWD
+        interpreter
+            .variables
+            .insert("PROMPT".to_string(), "flash:$PWD$ ".to_string());
+
+        // Get initial prompt - should contain initial PWD
+        let initial_prompt = interpreter.get_prompt();
+        let initial_pwd = interpreter.variables.get("PWD").unwrap().clone();
+        assert!(initial_prompt.contains(&initial_pwd));
+
+        // Change directory to parent
+        let result = interpreter.execute("cd ..");
+        assert!(result.is_ok());
+
+        // Get new prompt - should contain updated PWD
+        let new_prompt = interpreter.get_prompt();
+        let new_pwd = interpreter.variables.get("PWD").unwrap();
+        assert!(new_prompt.contains(new_pwd));
+
+        // PWD should have changed
+        assert_ne!(&initial_pwd, new_pwd);
+
+        // The prompt should reflect the new PWD
+        assert_eq!(new_prompt, format!("flash:{}$ ", new_pwd));
+    }
+
+    #[test]
     fn test_command_substitution_basic() {
         let mut interpreter = Interpreter::new();
 
@@ -3097,9 +3159,9 @@ mod tests {
             let current_dir = std::env::current_dir().unwrap();
 
             // Canonicalize both paths to handle symlink differences (e.g., /tmp vs /private/tmp on macOS)
-            let output_canonical = std::path::Path::new(&output)
+            let output_canonical = std::path::Path::new(output.trim())
                 .canonicalize()
-                .unwrap_or_else(|_| std::path::PathBuf::from(&output));
+                .unwrap_or_else(|_| std::path::PathBuf::from(output.trim()));
             let current_canonical = current_dir
                 .canonicalize()
                 .unwrap_or_else(|_| current_dir.clone());

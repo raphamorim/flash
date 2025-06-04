@@ -40,6 +40,7 @@ pub enum Node {
     },
     Comment(String),
     StringLiteral(String),
+    SingleQuotedString(String), // Single-quoted strings that should not have variable expansion
     ExtGlobPattern {
         operator: char,        // ?, *, +, @, !
         patterns: Vec<String>, // The pattern list inside the parentheses
@@ -348,7 +349,8 @@ impl Parser {
                     }
                 }
                 TokenKind::SingleQuote => {
-                    if let Node::StringLiteral(s) = self.parse_quoted_string(TokenKind::SingleQuote)
+                    if let Node::SingleQuotedString(s) =
+                        self.parse_quoted_string(TokenKind::SingleQuote)
                     {
                         result.push_str(&s);
                     }
@@ -497,8 +499,11 @@ impl Parser {
 
     // Helper method to parse quoted strings
     fn parse_quoted_string(&mut self, quote_type: TokenKind) -> Node {
-        let quoted_value = self.parse_quoted_string_value(quote_type);
-        Node::StringLiteral(quoted_value)
+        let quoted_value = self.parse_quoted_string_value(quote_type.clone());
+        match quote_type {
+            TokenKind::SingleQuote => Node::SingleQuotedString(quoted_value),
+            _ => Node::StringLiteral(quoted_value),
+        }
     }
 
     // Helper method to get the string value from quoted content
@@ -4499,8 +4504,8 @@ fi
                 assert!(value.is_some());
 
                 match *value.unwrap() {
-                    Node::StringLiteral(val) => assert_eq!(val, "Hello World"),
-                    _ => panic!("Expected StringLiteral value"),
+                    Node::SingleQuotedString(val) => assert_eq!(val, "Hello World"),
+                    _ => panic!("Expected SingleQuotedString value"),
                 }
             }
             _ => panic!("Expected Export node, got {:?}", result),
