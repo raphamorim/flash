@@ -217,6 +217,19 @@ impl DefaultEvaluator {
             return self.evaluate_function_call(name, args, redirects, interpreter);
         }
 
+        // Check for alias expansion
+        if let Some(alias_value) = interpreter.aliases.get(name) {
+            // Parse the alias value properly handling escaped spaces
+            let mut alias_parts = interpreter.parse_alias_value(alias_value);
+            alias_parts.extend_from_slice(args);
+
+            // Create a new command with the expanded alias
+            if let Some(new_name) = alias_parts.first() {
+                let new_args = &alias_parts[1..];
+                return self.evaluate_command(new_name, new_args, redirects, interpreter);
+            }
+        }
+
         // Handle built-in commands
         match name {
             "cd" => {
@@ -388,6 +401,64 @@ impl DefaultEvaluator {
                         eprintln!("seq: wrong number of arguments");
                         Ok(1)
                     }
+                }
+            }
+            "alias" => {
+                if args.is_empty() {
+                    // List all aliases
+                    for (name, value) in &interpreter.aliases {
+                        println!("alias {}='{}'", name, value);
+                    }
+                    Ok(0)
+                } else {
+                    // Join all arguments back together to handle cases like: alias ll="ls -la"
+                    let full_arg = args.join(" ");
+                    if let Some(eq_pos) = full_arg.find('=') {
+                        // Define alias: alias name=value
+                        let name = full_arg[..eq_pos].trim().to_string();
+                        let mut value = full_arg[eq_pos + 1..].to_string();
+
+                        // Remove surrounding quotes if present
+                        if (value.starts_with('"') && value.ends_with('"'))
+                            || (value.starts_with('\'') && value.ends_with('\''))
+                        {
+                            value = value[1..value.len() - 1].to_string();
+                        }
+
+                        // Trim any leading/trailing whitespace
+                        let value = value.trim().to_string();
+
+                        interpreter.aliases.insert(name, value);
+                        Ok(0)
+                    } else if args.len() == 1 {
+                        // Show specific alias
+                        let name = &args[0];
+                        if let Some(value) = interpreter.aliases.get(name) {
+                            println!("alias {}='{}'", name, value);
+                            Ok(0)
+                        } else {
+                            eprintln!("alias: {}: not found", name);
+                            Ok(1)
+                        }
+                    } else {
+                        eprintln!("alias: usage: alias [name[=value] ...]");
+                        Ok(1)
+                    }
+                }
+            }
+            "unalias" => {
+                if args.is_empty() {
+                    eprintln!("unalias: usage: unalias name [name ...]");
+                    Ok(1)
+                } else {
+                    let mut success = true;
+                    for name in args {
+                        if interpreter.aliases.remove(name).is_none() {
+                            eprintln!("unalias: {}: not found", name);
+                            success = false;
+                        }
+                    }
+                    Ok(if success { 0 } else { 1 })
                 }
             }
             _ => {
@@ -1032,6 +1103,7 @@ impl DefaultEvaluator {
 pub struct Interpreter {
     pub variables: HashMap<String, String>,
     pub functions: HashMap<String, Box<Node>>, // Store function definitions
+    pub aliases: HashMap<String, String>,      // Store alias definitions
     pub last_exit_code: i32,
     pub history: Vec<String>,
     pub history_file: Option<String>,
@@ -1098,6 +1170,7 @@ impl Interpreter {
         let mut interpreter = Self {
             variables,
             functions: HashMap::new(), // Initialize empty functions map
+            aliases: HashMap::new(),   // Initialize empty aliases map
             last_exit_code: 0,
             history,
             history_file,
@@ -1256,10 +1329,22 @@ impl Interpreter {
         let mut full_names = Vec::new();
 
         // Add built-ins
-        for cmd in &["cd", "echo", "export", "source", ".", "exit"] {
+        for cmd in &[
+            "cd", "echo", "export", "source", ".", "exit", "alias", "unalias",
+        ] {
             if cmd.starts_with(prefix) {
                 full_names.push(cmd.to_string());
                 if let Some(stripped) = cmd.strip_prefix(prefix) {
+                    suffixes.push(stripped.to_string());
+                }
+            }
+        }
+
+        // Add aliases
+        for alias_name in self.aliases.keys() {
+            if alias_name.starts_with(prefix) {
+                full_names.push(alias_name.to_string());
+                if let Some(stripped) = alias_name.strip_prefix(prefix) {
                     suffixes.push(stripped.to_string());
                 }
             }
@@ -2663,6 +2748,7 @@ impl Interpreter {
         let mut temp_interpreter = Interpreter {
             variables: self.variables.clone(),
             functions: self.functions.clone(),
+            aliases: self.aliases.clone(),
             last_exit_code: self.last_exit_code,
             history: Vec::new(),
             history_file: None,
@@ -2863,6 +2949,74 @@ impl Interpreter {
 
         if negated { !matches } else { matches }
     }
+
+    /// Parse alias value handling escaped spaces and quotes
+    fn parse_alias_value(&self, value: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current_part = String::new();
+        let mut chars = value.chars().peekable();
+        let mut in_quotes = false;
+        let mut quote_char = '\0';
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\\' => {
+                    // Handle escape sequences
+                    if let Some(&next_ch) = chars.peek() {
+                        match next_ch {
+                            ' ' | '\t' | '\\' | '"' | '\'' => {
+                                // Escape the next character
+                                current_part.push(chars.next().unwrap());
+                            }
+                            _ => {
+                                // Not a recognized escape, keep the backslash
+                                current_part.push(ch);
+                            }
+                        }
+                    } else {
+                        // Backslash at end of string
+                        current_part.push(ch);
+                    }
+                }
+                '"' | '\'' => {
+                    if !in_quotes {
+                        // Start quoted section
+                        in_quotes = true;
+                        quote_char = ch;
+                    } else if ch == quote_char {
+                        // End quoted section
+                        in_quotes = false;
+                        quote_char = '\0';
+                    } else {
+                        // Different quote character inside quotes
+                        current_part.push(ch);
+                    }
+                }
+                ' ' | '\t' => {
+                    if in_quotes {
+                        // Space inside quotes is literal
+                        current_part.push(ch);
+                    } else {
+                        // Space outside quotes separates arguments
+                        if !current_part.is_empty() {
+                            parts.push(current_part);
+                            current_part = String::new();
+                        }
+                    }
+                }
+                _ => {
+                    current_part.push(ch);
+                }
+            }
+        }
+
+        // Add the last part if it's not empty
+        if !current_part.is_empty() {
+            parts.push(current_part);
+        }
+
+        parts
+    }
 }
 
 #[cfg(test)]
@@ -2878,6 +3032,7 @@ mod tests {
         let mut interpreter = Interpreter {
             variables: HashMap::default(),
             functions: HashMap::new(),
+            aliases: HashMap::new(),
             last_exit_code: 0,
             history: Vec::new(),
             history_file: None,
@@ -4570,5 +4725,135 @@ mod tests {
         // Test that we can access it in command substitution context
         let expanded_braces = interpreter.expand_variables("${FLASH_VERSION}");
         assert_eq!(expanded_braces, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_alias_parsing_with_escapes() {
+        let interpreter = Interpreter::new();
+
+        // Test basic alias parsing
+        let parts = interpreter.parse_alias_value("echo hello");
+        assert_eq!(parts, vec!["echo", "hello"]);
+
+        // Test escaped spaces
+        let parts = interpreter.parse_alias_value("echo hello\\ world");
+        assert_eq!(parts, vec!["echo", "hello world"]);
+
+        // Test path with escaped spaces (like Sublime Text)
+        let parts = interpreter
+            .parse_alias_value("/Applications/Sublime\\ Text.app/Contents/SharedSupport/bin/subl");
+        assert_eq!(
+            parts,
+            vec!["/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"]
+        );
+
+        // Test quoted strings
+        let parts = interpreter.parse_alias_value("echo \"hello world\"");
+        assert_eq!(parts, vec!["echo", "hello world"]);
+
+        // Test single quoted strings
+        let parts = interpreter.parse_alias_value("echo 'hello world'");
+        assert_eq!(parts, vec!["echo", "hello world"]);
+
+        // Test mixed quotes and escapes
+        let parts = interpreter.parse_alias_value("echo \"hello world\" test");
+        assert_eq!(parts, vec!["echo", "hello world", "test"]);
+
+        // Test multiple escaped spaces
+        let parts =
+            interpreter.parse_alias_value("cp file\\ name.txt /path/to/destination\\ folder/");
+        assert_eq!(
+            parts,
+            vec!["cp", "file name.txt", "/path/to/destination folder/"]
+        );
+
+        // Test empty value
+        let parts = interpreter.parse_alias_value("");
+        assert_eq!(parts, Vec::<String>::new());
+
+        // Test only spaces
+        let parts = interpreter.parse_alias_value("   ");
+        assert_eq!(parts, Vec::<String>::new());
+
+        // Test escaped backslash
+        let parts = interpreter.parse_alias_value("echo hello\\\\world");
+        assert_eq!(parts, vec!["echo", "hello\\world"]);
+    }
+
+    #[test]
+    fn test_alias_functionality() {
+        let mut interpreter = Interpreter::new();
+        let mut evaluator = DefaultEvaluator;
+
+        // Test alias creation
+        let result = evaluator.evaluate_command(
+            "alias",
+            &["test_alias=echo hello world".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify alias was created
+        assert!(interpreter.aliases.contains_key("test_alias"));
+        assert_eq!(
+            interpreter.aliases.get("test_alias").unwrap(),
+            "echo hello world"
+        );
+
+        // Test alias expansion
+        let result = evaluator.evaluate_command("test_alias", &[], &[], &mut interpreter);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Test alias with additional arguments
+        let result = evaluator.evaluate_command(
+            "test_alias",
+            &["extra".to_string(), "args".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Test alias with escaped spaces
+        let result = evaluator.evaluate_command(
+            "alias",
+            &["path_alias=/path/to/file\\ with\\ spaces".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify escaped spaces alias
+        assert_eq!(
+            interpreter.aliases.get("path_alias").unwrap(),
+            "/path/to/file\\ with\\ spaces"
+        );
+
+        // Test unalias
+        let result = evaluator.evaluate_command(
+            "unalias",
+            &["test_alias".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify alias was removed
+        assert!(!interpreter.aliases.contains_key("test_alias"));
+
+        // Test unalias non-existent alias
+        let result = evaluator.evaluate_command(
+            "unalias",
+            &["nonexistent".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1); // Should return error code
     }
 }
