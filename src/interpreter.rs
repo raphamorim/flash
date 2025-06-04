@@ -1482,6 +1482,12 @@ impl Interpreter {
             let _ = tcsetattr(fd, TCSANOW, &original_termios);
         });
 
+        // Ignore SIGINT (Ctrl+C) for the shell process
+        // This prevents the shell from exiting when Ctrl+C is pressed
+        unsafe {
+            libc::signal(libc::SIGINT, libc::SIG_IGN);
+        }
+
         let mut history_index = self.history.len();
 
         loop {
@@ -2026,8 +2032,18 @@ impl Interpreter {
 
                 // Ctrl-C
                 3 => {
-                    println!("^C");
-                    return Ok(String::new());
+                    // Print ^C and move to new line (like bash)
+                    print!("^C");
+                    stdout.flush()?;
+                    println!();
+
+                    // Clear the current buffer and reset cursor
+                    buffer.clear();
+                    cursor_pos = 0;
+
+                    // Show a fresh prompt on the new line
+                    write!(stdout, "{}", prompt)?;
+                    stdout.flush()?;
                 }
 
                 // Escape sequence (arrow keys, etc.)

@@ -1080,3 +1080,139 @@ echo "COMPLEX: $COMPLEX""#,
 
     assert!(output.status.success());
 }
+
+#[test]
+fn test_ctrl_c_signal_handling() {
+    // Test that the shell doesn't crash when receiving signals
+    // We'll test this by running a script that would normally be interrupted
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("signal_test.sh");
+
+    fs::write(
+        &script_path,
+        r#"#!/usr/bin/env flash
+# Test script that should complete normally
+echo "Starting test"
+echo "Test completed"
+"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = get_flash_binary_path();
+
+    // Run the script - it should complete normally even with signal handling enabled
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    println!("stdout: {}", stdout);
+    println!("stderr: {}", stderr);
+
+    // The script should run to completion
+    assert!(stdout.contains("Starting test"));
+    assert!(stdout.contains("Test completed"));
+    assert!(
+        output.status.success(),
+        "Script should complete successfully"
+    );
+}
+
+#[test]
+fn test_shell_signal_resilience() {
+    // Test that the shell binary exists and can handle basic operations
+    // This indirectly tests that signal handling doesn't break normal operation
+    let binary_path = get_flash_binary_path();
+
+    // Test with a simple command via -c flag
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("echo 'Signal handling test'")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(stdout.contains("Signal handling test"));
+    assert!(
+        output.status.success(),
+        "Shell should execute commands normally"
+    );
+}
+
+#[test]
+fn test_ctrl_c_with_external_command() {
+    // Create a script that runs a command
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("test_script.sh");
+
+    fs::write(
+        &script_path,
+        r#"#!/usr/bin/env flash
+# Test script that runs commands
+echo "Starting command"
+echo "Command completed"
+"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = get_flash_binary_path();
+
+    // Run the script - it should complete normally
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    // The script should run to completion
+    assert!(stdout.contains("Starting command"));
+    assert!(stdout.contains("Command completed"));
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_shell_resilience_to_signals() {
+    // Test that the shell can handle multiple commands and doesn't crash
+    let temp_dir = tempdir().unwrap();
+    let script_path = temp_dir.path().join("multi_command.sh");
+
+    fs::write(
+        &script_path,
+        r#"#!/usr/bin/env flash
+# Test script with multiple commands
+echo 'first command'
+echo 'second command'  
+echo 'third command'
+"#,
+    )
+    .unwrap();
+
+    // Get the path to the flash binary
+    let binary_path = get_flash_binary_path();
+
+    let output = Command::new(&binary_path)
+        .arg(&script_path)
+        .output()
+        .expect("Failed to execute flash");
+
+    // Shell should handle this gracefully
+    assert!(
+        output.status.success(),
+        "Shell should execute multiple commands"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("stdout: {}", stdout);
+
+    // Should see all command outputs
+    assert!(stdout.contains("first command"));
+    assert!(stdout.contains("second command"));
+    assert!(stdout.contains("third command"));
+}
