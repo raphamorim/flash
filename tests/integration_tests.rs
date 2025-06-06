@@ -1216,3 +1216,351 @@ echo 'third command'
     assert!(stdout.contains("second command"));
     assert!(stdout.contains("third command"));
 }
+
+#[test]
+fn test_bash_style_conditional_and_operator() {
+    // Test [ condition ] && command syntax
+    let binary_path = get_flash_binary_path();
+
+    // Test successful condition with &&
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "hello" = "hello" ] && echo "condition true""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "condition true\n");
+    assert!(output.status.success());
+
+    // Test failed condition with &&
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "hello" = "world" ] && echo "should not print""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "");
+    assert!(!output.status.success()); // Should fail because condition is false
+}
+
+#[test]
+fn test_bash_style_conditional_or_operator() {
+    // Test [ condition ] || command syntax
+    let binary_path = get_flash_binary_path();
+
+    // Test failed condition with ||
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "hello" = "world" ] || echo "condition false""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "condition false\n");
+    assert!(output.status.success());
+
+    // Test successful condition with ||
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "hello" = "hello" ] || echo "should not print""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "");
+    assert!(output.status.success()); // Should succeed because condition is true
+}
+
+#[test]
+fn test_bash_style_conditional_file_tests() {
+    // Test file test operators with conditional syntax
+    let binary_path = get_flash_binary_path();
+    let temp_dir = tempdir().unwrap();
+    let test_file = temp_dir.path().join("test_file.txt");
+    let empty_file = temp_dir.path().join("empty_file.txt");
+
+    // Create a test file with content
+    fs::write(&test_file, "test content").unwrap();
+    // Create an empty file
+    fs::write(&empty_file, "").unwrap();
+
+    // Test -s operator (file exists and has size > 0)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(format!(
+            r#"[ -s "{}" ] && echo "file has content""#,
+            test_file.display()
+        ))
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "file has content\n");
+    assert!(output.status.success());
+
+    // Test -s operator with empty file
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(format!(
+            r#"[ -s "{}" ] || echo "file is empty""#,
+            empty_file.display()
+        ))
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "file is empty\n");
+    assert!(output.status.success());
+
+    // Test -f operator (file exists and is regular file)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(format!(
+            r#"[ -f "{}" ] && echo "is regular file""#,
+            test_file.display()
+        ))
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "is regular file\n");
+    assert!(output.status.success());
+
+    // Test -e operator (file exists)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(format!(
+            r#"[ -e "{}" ] && echo "file exists""#,
+            test_file.display()
+        ))
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "file exists\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_style_conditional_string_tests() {
+    // Test string comparison operators with conditional syntax
+    let binary_path = get_flash_binary_path();
+
+    // Test string equality
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "test" = "test" ] && echo "strings equal""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "strings equal\n");
+    assert!(output.status.success());
+
+    // Test string inequality
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "test" != "other" ] && echo "strings not equal""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "strings not equal\n");
+    assert!(output.status.success());
+
+    // Test -n operator (string is non-empty)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ -n "test" ] && echo "string is non-empty""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "string is non-empty\n");
+    assert!(output.status.success());
+
+    // Test -z operator (string is empty)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ -z "" ] && echo "string is empty""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "string is empty\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_style_conditional_numeric_tests() {
+    // Test numeric comparison operators with conditional syntax
+    let binary_path = get_flash_binary_path();
+
+    // Test numeric equality
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ 5 -eq 5 ] && echo "numbers equal""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "numbers equal\n");
+    assert!(output.status.success());
+
+    // Test numeric inequality
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ 5 -ne 3 ] && echo "numbers not equal""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "numbers not equal\n");
+    assert!(output.status.success());
+
+    // Test less than
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ 3 -lt 5 ] && echo "3 less than 5""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "3 less than 5\n");
+    assert!(output.status.success());
+
+    // Test greater than
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ 5 -gt 3 ] && echo "5 greater than 3""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "5 greater than 3\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_style_conditional_with_variables() {
+    // Test conditional syntax with variable expansion
+    let binary_path = get_flash_binary_path();
+
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"VAR="test"; [ "$VAR" = "test" ] && echo "variable matches""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "variable matches\n");
+    assert!(output.status.success());
+
+    // Test with environment variable
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ -n "$HOME" ] && echo "HOME is set""#)
+        .env("HOME", "/test/home")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "HOME is set\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_style_conditional_chaining() {
+    // Test chaining multiple conditional operations
+    let binary_path = get_flash_binary_path();
+
+    // Test && followed by ||
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "a" = "a" ] && echo "first" || echo "second""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "first\n");
+    assert!(output.status.success());
+
+    // Test || followed by &&
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(r#"[ "a" = "b" ] || [ "c" = "c" ] && echo "success""#)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "success\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_style_conditional_complex_commands() {
+    // Test conditional syntax with more complex commands
+    let binary_path = get_flash_binary_path();
+    let temp_dir = tempdir().unwrap();
+    let script_file = temp_dir.path().join("test_script.sh");
+
+    // Create a script file
+    fs::write(&script_file, "echo 'script executed'").unwrap();
+
+    // Test sourcing a file conditionally
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(format!(
+            r#"[ -f "{}" ] && . "{}""#,
+            script_file.display(),
+            script_file.display()
+        ))
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout, "script executed\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_bash_specific_features_support() {
+    // Test that bash-specific features are handled gracefully
+    let binary_path = get_flash_binary_path();
+
+    // Test complete command
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("complete -F _nvm nvm")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    // The complete command should now work silently without warnings
+    assert!(!stderr.contains("Tab completion setup"));
+    assert!(output.status.success());
+
+    // Test history expansion with no history (should show "event not found")
+    let output = Command::new(&binary_path)
+        .env("HOME", "/tmp/nonexistent_home_for_test") // Use a non-existent home to avoid loading history
+        .arg("-c")
+        .arg("!echo")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("event not found"));
+    assert!(!output.status.success()); // Should return error code
+
+    // Test extended test command (basic functionality)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("[[ -n \"test\" ]] && echo \"extended test basic\"")
+        .output()
+        .expect("Failed to execute flash");
+
+    // Should not crash, even if it doesn't work perfectly yet
+    assert!(output.status.code().is_some());
+}

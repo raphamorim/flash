@@ -51,6 +51,11 @@ pub enum TokenKind {
     Continue, // continue keyword
     Return,   // return keyword (for functions)
     Export,   // export keyword
+    // Bash-specific features
+    DoubleLBracket, // [[ - extended test command
+    DoubleRBracket, // ]] - end extended test
+    History,        // ! - history expansion
+    Complete,       // complete - tab completion builtin
     EOF,
 }
 
@@ -347,8 +352,58 @@ impl Lexer {
                         value: "!=".to_string(),
                         position: current_position,
                     }
+                } else if self.peek_char() == '(' {
+                    // This is an extglob pattern !(pattern), treat as word
+                    self.read_word()
+                } else if self.peek_char() == '!' {
+                    // !! - history expansion with empty pattern
+                    self.read_char(); // Consume the second '!'
+                    Token {
+                        kind: TokenKind::History,
+                        value: "!!".to_string(),
+                        position: current_position,
+                    }
+                } else if self.peek_char() == ' ' || self.peek_char() == '\t' {
+                    // ! followed by whitespace - this is logical negation, treat as word
+                    Token {
+                        kind: TokenKind::Word("!".to_string()),
+                        value: "!".to_string(),
+                        position: current_position,
+                    }
                 } else {
-                    // Single ! is treated as a word character
+                    // History expansion - treat as History token
+                    Token {
+                        kind: TokenKind::History,
+                        value: "!".to_string(),
+                        position: current_position,
+                    }
+                }
+            }
+            '[' => {
+                // Check for [[ extended test command
+                if self.peek_char() == '[' {
+                    self.read_char(); // Consume the second '['
+                    Token {
+                        kind: TokenKind::DoubleLBracket,
+                        value: "[[".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    // Single [ is treated as a word (test command)
+                    self.read_word()
+                }
+            }
+            ']' => {
+                // Check for ]] end of extended test command
+                if self.peek_char() == ']' {
+                    self.read_char(); // Consume the second ']'
+                    Token {
+                        kind: TokenKind::DoubleRBracket,
+                        value: "]]".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    // Single ] is treated as a word
                     self.read_word()
                 }
             }
@@ -984,6 +1039,21 @@ impl Lexer {
                     self.read_char();
                 }
             }
+            // Handle escape sequences
+            else if self.ch == '\\' {
+                // Look at the next character
+                let next_ch = self.peek_char();
+                if next_ch != '\0' {
+                    // Skip the backslash and add the escaped character
+                    self.read_char(); // Skip the backslash
+                    word.push(self.ch); // Add the escaped character
+                    self.read_char(); // Move past the escaped character
+                } else {
+                    // Backslash at end of input, treat as literal
+                    word.push(self.ch);
+                    self.read_char();
+                }
+            }
             // Handle regular characters and glob metacharacters
             else {
                 word.push(self.ch);
@@ -1016,6 +1086,7 @@ impl Lexer {
             "continue" => TokenKind::Continue,
             "return" => TokenKind::Return,
             "export" => TokenKind::Export,
+            "complete" => TokenKind::Complete,
             _ => TokenKind::Word(word.clone()),
         };
 
@@ -2722,6 +2793,134 @@ mod lexer_tests {
             TokenKind::Word("test".to_string()),
             TokenKind::Semicolon,
             TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_logical_negation_tokenization() {
+        // Test ! followed by space (should be Word token)
+        let input = "! echo test";
+        let expected = vec![
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("test".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_history_expansion_tokenization() {
+        // Test !! (should be History token)
+        let input = "!!";
+        let expected = vec![TokenKind::History];
+        test_tokens(input, expected);
+
+        // Test !command (should be History token)
+        let input = "!echo";
+        let expected = vec![TokenKind::History, TokenKind::Word("echo".to_string())];
+        test_tokens(input, expected);
+
+        // Test !123 (should be History token)
+        let input = "!123";
+        let expected = vec![TokenKind::History, TokenKind::Word("123".to_string())];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_negation_vs_history_distinction() {
+        // Test ! followed by space vs ! followed by word
+        let input1 = "! false";
+        let expected1 = vec![
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("false".to_string()),
+        ];
+        test_tokens(input1, expected1);
+
+        let input2 = "!false";
+        let expected2 = vec![TokenKind::History, TokenKind::Word("false".to_string())];
+        test_tokens(input2, expected2);
+    }
+
+    #[test]
+    fn test_complete_command_tokenization() {
+        let input = "complete -F _test test";
+        let expected = vec![
+            TokenKind::Complete,
+            TokenKind::Word("-F".to_string()),
+            TokenKind::Word("_test".to_string()),
+            TokenKind::Word("test".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_command_builtin_tokenization() {
+        let input = "command echo test";
+        let expected = vec![
+            TokenKind::Word("command".to_string()),
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("test".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_complex_negation_scenarios() {
+        // Test double negation
+        let input = "! ! true";
+        let expected = vec![
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("true".to_string()),
+        ];
+        test_tokens(input, expected);
+
+        // Test negation in conditional
+        let input = "if ! command false; then echo success; fi";
+        let expected = vec![
+            TokenKind::If,
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("command".to_string()),
+            TokenKind::Word("false".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Then,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("success".to_string()),
+            TokenKind::Semicolon,
+            TokenKind::Fi,
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_mixed_history_and_negation() {
+        // Test script with both history expansion and negation
+        let input = "!! && ! false";
+        let expected = vec![
+            TokenKind::History,
+            TokenKind::And,
+            TokenKind::Word("!".to_string()),
+            TokenKind::Word("false".to_string()),
+        ];
+        test_tokens(input, expected);
+    }
+
+    #[test]
+    fn test_extglob_vs_negation() {
+        // Test that !(pattern) is treated as a word (extglob pattern)
+        let input = "!(*.txt)";
+        let expected = vec![TokenKind::Word("!(*.txt)".to_string())];
+        test_tokens(input, expected);
+
+        // But ! (pattern) should be negation + subshell
+        let input = "! (echo test)";
+        let expected = vec![
+            TokenKind::Word("!".to_string()),
+            TokenKind::LParen,
+            TokenKind::Word("echo".to_string()),
+            TokenKind::Word("test".to_string()),
+            TokenKind::RParen,
         ];
         test_tokens(input, expected);
     }

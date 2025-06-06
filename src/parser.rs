@@ -77,6 +77,20 @@ pub enum Node {
     Return {
         value: Option<Box<Node>>,
     },
+    // Bash-specific features
+    ExtendedTest {
+        condition: Box<Node>,
+    },
+    HistoryExpansion {
+        pattern: String,
+    },
+    Complete {
+        options: Vec<String>,
+        command: String,
+    },
+    Negation {
+        command: Box<Node>,
+    },
 }
 
 /// Redirection types
@@ -235,6 +249,11 @@ impl Parser {
                     return Some(self.parse_export());
                 }
 
+                // Check for logical negation
+                if word == "!" {
+                    return Some(self.parse_negation());
+                }
+
                 let command_node = self.parse_command();
                 Some(command_node)
             }
@@ -250,6 +269,9 @@ impl Parser {
             TokenKind::ExtGlob(_) => Some(self.parse_extglob()),
             TokenKind::Export => Some(self.parse_export()),
             TokenKind::Return => Some(self.parse_return()),
+            TokenKind::DoubleLBracket => Some(self.parse_extended_test()),
+            TokenKind::History => Some(self.parse_history_expansion()),
+            TokenKind::Complete => Some(self.parse_complete()),
             _ => None,
         }
     }
@@ -1667,6 +1689,125 @@ impl Parser {
         Node::Subshell {
             list: Box::new(list_node),
         }
+    }
+
+    // Parse extended test command: [[ condition ]]
+    fn parse_extended_test(&mut self) -> Node {
+        self.next_token(); // Skip '[['
+
+        // Parse the condition inside [[ ]]
+        let mut condition_parts = Vec::new();
+
+        while self.current_token.kind != TokenKind::DoubleRBracket
+            && self.current_token.kind != TokenKind::EOF
+        {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    condition_parts.push(word.clone());
+                    self.next_token();
+                }
+                _ => {
+                    condition_parts.push(self.current_token.value.clone());
+                    self.next_token();
+                }
+            }
+        }
+
+        if self.current_token.kind == TokenKind::DoubleRBracket {
+            self.next_token(); // Skip ']]'
+        }
+
+        // Create a command node that represents the extended test
+        let condition = Node::Command {
+            name: "[[".to_string(),
+            args: condition_parts,
+            redirects: Vec::new(),
+        };
+
+        Node::ExtendedTest {
+            condition: Box::new(condition),
+        }
+    }
+
+    // Parse history expansion: !pattern
+    fn parse_history_expansion(&mut self) -> Node {
+        let history_token = self.current_token.value.clone();
+        self.next_token(); // Skip '!' or '!!'
+
+        let pattern = if history_token == "!!" {
+            // !! means repeat last command (empty pattern)
+            String::new()
+        } else {
+            // ! followed by pattern
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    let pattern = word.clone();
+                    self.next_token();
+                    pattern
+                }
+                _ => String::new(),
+            }
+        };
+
+        Node::HistoryExpansion { pattern }
+    }
+
+    // Parse complete command: complete [options] command
+    fn parse_complete(&mut self) -> Node {
+        self.next_token(); // Skip 'complete'
+
+        let mut options = Vec::new();
+        let mut command = String::new();
+
+        // Parse options and command
+        while self.current_token.kind != TokenKind::Newline
+            && self.current_token.kind != TokenKind::Semicolon
+            && self.current_token.kind != TokenKind::EOF
+        {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    if word.starts_with('-') {
+                        options.push(word.clone());
+                    } else {
+                        // If we haven't found the command yet, this could be an option argument or the command
+                        // For simplicity, add non-dash words as options until we find the last word
+                        if command.is_empty() {
+                            options.push(word.clone());
+                        }
+                    }
+                    self.next_token();
+                }
+                _ => {
+                    self.next_token();
+                }
+            }
+        }
+
+        // The last option should be the command
+        if !options.is_empty() {
+            command = options.pop().unwrap();
+        }
+
+        Node::Complete { options, command }
+    }
+
+    // Parse logical negation: ! command
+    fn parse_negation(&mut self) -> Node {
+        self.next_token(); // Skip '!'
+
+        // Parse the command to negate
+        let command = if let Some(cmd) = self.parse_statement() {
+            Box::new(cmd)
+        } else {
+            // If no command follows, treat as empty command
+            Box::new(Node::Command {
+                name: "true".to_string(),
+                args: vec![],
+                redirects: vec![],
+            })
+        };
+
+        Node::Negation { command }
     }
 }
 
@@ -4902,6 +5043,531 @@ fi
                 _ => panic!("Expected Assignment node"),
             },
             _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_and_parsing() {
+        // Test parsing of [ condition ] && command
+        let input = r#"[ "test" = "test" ] && echo "success""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "&&");
+
+                // First statement should be the test command
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 4); // "test", "=", "test", "]"
+                        assert_eq!(args[0], "test");
+                        assert_eq!(args[1], "=");
+                        assert_eq!(args[2], "test");
+                        assert_eq!(args[3], "]");
+                    }
+                    _ => panic!("Expected Command node for test"),
+                }
+
+                // Second statement should be the echo command
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "success");
+                    }
+                    _ => panic!("Expected Command node for echo"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_or_parsing() {
+        // Test parsing of [ condition ] || command
+        let input = r#"[ "test" != "other" ] || echo "failed""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "||");
+
+                // First statement should be the test command
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 4); // "test", "!=", "other", "]"
+                        assert_eq!(args[0], "test");
+                        assert_eq!(args[1], "!=");
+                        assert_eq!(args[2], "other");
+                        assert_eq!(args[3], "]");
+                    }
+                    _ => panic!("Expected Command node for test"),
+                }
+
+                // Second statement should be the echo command
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "failed");
+                    }
+                    _ => panic!("Expected Command node for echo"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_file_test_parsing() {
+        // Test parsing of file test operators
+        let input = r#"[ -s "/path/to/file" ] && . "/path/to/script""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "&&");
+
+                // First statement should be the file test
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 3); // "-s", "/path/to/file", "]"
+                        assert_eq!(args[0], "-s");
+                        assert_eq!(args[1], "/path/to/file");
+                        assert_eq!(args[2], "]");
+                    }
+                    _ => panic!("Expected Command node for file test"),
+                }
+
+                // Second statement should be the source command
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, ".");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "/path/to/script");
+                    }
+                    _ => panic!("Expected Command node for source"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_with_variables_parsing() {
+        // Test parsing with variable expansion
+        let input = r#"[ -n "$HOME" ] && echo "HOME is set""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "&&");
+
+                // First statement should be the variable test
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 3); // "-n", "$HOME", "]"
+                        assert_eq!(args[0], "-n");
+                        assert_eq!(args[1], "$HOME");
+                        assert_eq!(args[2], "]");
+                    }
+                    _ => panic!("Expected Command node for variable test"),
+                }
+
+                // Second statement should be the echo command
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "HOME is set");
+                    }
+                    _ => panic!("Expected Command node for echo"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_chaining_parsing() {
+        // Test parsing of chained conditional operations
+        let input = r#"[ "a" = "a" ] && echo "first" || echo "second""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 3);
+                assert_eq!(operators.len(), 2);
+                assert_eq!(operators[0], "&&");
+                assert_eq!(operators[1], "||");
+
+                // First statement: test command
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args[0], "a");
+                        assert_eq!(args[1], "=");
+                        assert_eq!(args[2], "a");
+                        assert_eq!(args[3], "]");
+                    }
+                    _ => panic!("Expected Command node for test"),
+                }
+
+                // Second statement: first echo
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args[0], "first");
+                    }
+                    _ => panic!("Expected Command node for first echo"),
+                }
+
+                // Third statement: second echo
+                match &statements[2] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args[0], "second");
+                    }
+                    _ => panic!("Expected Command node for second echo"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_bash_style_conditional_numeric_test_parsing() {
+        // Test parsing of numeric comparison operators
+        let input = r#"[ 5 -gt 3 ] && echo "greater""#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List {
+                statements,
+                operators,
+            } => {
+                assert_eq!(statements.len(), 2);
+                assert_eq!(operators.len(), 1);
+                assert_eq!(operators[0], "&&");
+
+                // First statement should be the numeric test
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "[");
+                        assert_eq!(args.len(), 4); // "5", "-gt", "3", "]"
+                        assert_eq!(args[0], "5");
+                        assert_eq!(args[1], "-gt");
+                        assert_eq!(args[2], "3");
+                        assert_eq!(args[3], "]");
+                    }
+                    _ => panic!("Expected Command node for numeric test"),
+                }
+
+                // Second statement should be the echo command
+                match &statements[1] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "echo");
+                        assert_eq!(args.len(), 1);
+                        assert_eq!(args[0], "greater");
+                    }
+                    _ => panic!("Expected Command node for echo"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_logical_negation_parsing() {
+        let input = "! echo test";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Negation { command } => match command.as_ref() {
+                        Node::Command { name, args, .. } => {
+                            assert_eq!(name, "echo");
+                            assert_eq!(args.len(), 1);
+                            assert_eq!(args[0], "test");
+                        }
+                        _ => panic!("Expected Command node inside Negation"),
+                    },
+                    _ => panic!("Expected Negation node in statements"),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_negation_in_conditional() {
+        let input = "if ! false; then echo success; fi";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::IfStatement {
+                        condition,
+                        consequence,
+                        ..
+                    } => {
+                        match condition.as_ref() {
+                            Node::Negation { command } => match command.as_ref() {
+                                Node::Command { name, .. } => {
+                                    assert_eq!(name, "false");
+                                }
+                                _ => panic!("Expected Command node inside Negation"),
+                            },
+                            _ => panic!("Expected Negation node in condition"),
+                        }
+
+                        match consequence.as_ref() {
+                            Node::List { statements, .. } => {
+                                assert_eq!(statements.len(), 1);
+                                match &statements[0] {
+                                    Node::Command { name, args, .. } => {
+                                        assert_eq!(name, "echo");
+                                        assert_eq!(args[0], "success");
+                                    }
+                                    _ => panic!("Expected Command node in then body statements"),
+                                }
+                            }
+                            Node::Command { name, args, .. } => {
+                                assert_eq!(name, "echo");
+                                assert_eq!(args[0], "success");
+                            }
+                            _ => panic!("Expected Command or List node in then body"),
+                        }
+                    }
+                    _ => panic!("Expected IfStatement node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_command_builtin_parsing() {
+        let input = "command echo test";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Command { name, args, .. } => {
+                        assert_eq!(name, "command");
+                        assert_eq!(args.len(), 2);
+                        assert_eq!(args[0], "echo");
+                        assert_eq!(args[1], "test");
+                    }
+                    _ => panic!("Expected Command node in statements"),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_complete_builtin_parsing() {
+        let input = "complete -F _test test";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Complete { options, command } => {
+                        assert_eq!(options.len(), 2);
+                        assert_eq!(options[0], "-F");
+                        assert_eq!(options[1], "_test");
+                        assert_eq!(command, "test");
+                    }
+                    _ => panic!(
+                        "Expected Complete node in statements, got: {:?}",
+                        &statements[0]
+                    ),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_history_expansion_parsing() {
+        // Test !! parsing
+        let input = "!!";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::HistoryExpansion { pattern } => {
+                        assert_eq!(pattern, ""); // !! should have empty pattern
+                    }
+                    _ => panic!("Expected HistoryExpansion node in statements"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+
+        // Test !command parsing
+        let input = "!echo";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::HistoryExpansion { pattern } => {
+                        assert_eq!(pattern, "echo");
+                    }
+                    _ => panic!("Expected HistoryExpansion node in statements"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+
+        // Test !123 parsing
+        let input = "!123";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::HistoryExpansion { pattern } => {
+                        assert_eq!(pattern, "123");
+                    }
+                    _ => panic!("Expected HistoryExpansion node in statements"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_complex_negation_scenarios() {
+        // Test double negation
+        let input = "! ! true";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Negation { command } => match command.as_ref() {
+                        Node::Negation {
+                            command: inner_command,
+                        } => match inner_command.as_ref() {
+                            Node::Command { name, .. } => {
+                                assert_eq!(name, "true");
+                            }
+                            _ => panic!("Expected Command node in inner negation"),
+                        },
+                        _ => panic!("Expected Negation node inside outer negation"),
+                    },
+                    _ => panic!("Expected Negation node in statements"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_negation_with_command_builtin() {
+        let input = "! command false";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Negation { command } => match command.as_ref() {
+                        Node::Command { name, args, .. } => {
+                            assert_eq!(name, "command");
+                            assert_eq!(args.len(), 1);
+                            assert_eq!(args[0], "false");
+                        }
+                        _ => panic!("Expected Command node inside Negation"),
+                    },
+                    _ => panic!("Expected Negation node in statements"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_negation_with_pipeline() {
+        let input = "! echo test | grep test";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::Negation { command } => match command.as_ref() {
+                        Node::Pipeline { commands } => {
+                            assert_eq!(commands.len(), 2);
+
+                            match &commands[0] {
+                                Node::Command { name, args, .. } => {
+                                    assert_eq!(name, "echo");
+                                    assert_eq!(args[0], "test");
+                                }
+                                _ => panic!("Expected Command node in pipeline"),
+                            }
+
+                            match &commands[1] {
+                                Node::Command { name, args, .. } => {
+                                    assert_eq!(name, "grep");
+                                    assert_eq!(args[0], "test");
+                                }
+                                _ => panic!("Expected Command node in pipeline"),
+                            }
+                        }
+                        _ => panic!("Expected Pipeline node inside Negation"),
+                    },
+                    _ => panic!(
+                        "Expected Negation node in statements, got: {:?}",
+                        &statements[0]
+                    ),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
         }
     }
 }

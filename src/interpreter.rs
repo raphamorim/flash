@@ -79,6 +79,21 @@ impl Evaluator for DefaultEvaluator {
                 redirects,
             } => self.evaluate_function_call(name, args, redirects, interpreter),
             Node::Return { value } => self.evaluate_return(value, interpreter),
+            Node::HistoryExpansion { pattern } => {
+                self.evaluate_history_expansion(pattern, interpreter)
+            }
+            Node::Complete {
+                options: _,
+                command: _,
+            } => {
+                // Complete command is handled silently - just acknowledge it
+                Ok(0)
+            }
+            Node::Negation { command } => {
+                // Logical negation - invert the exit code
+                let result = interpreter.evaluate_with_evaluator(command, self)?;
+                Ok(if result == 0 { 1 } else { 0 })
+            }
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
@@ -293,7 +308,7 @@ impl DefaultEvaluator {
                 }
                 Ok(0)
             }
-            "source" | "." => {
+            "source" | "." | "\\." => {
                 if args.is_empty() {
                     eprintln!("source: filename argument required");
                     return Ok(1);
@@ -418,7 +433,7 @@ impl DefaultEvaluator {
                         let name = full_arg[..eq_pos].trim().to_string();
                         let mut value = full_arg[eq_pos + 1..].to_string();
 
-                        // Remove surrounding quotes if present
+                        // Remove surrounding quotes if present and escape spaces
                         if (value.starts_with('"') && value.ends_with('"'))
                             || (value.starts_with('\'') && value.ends_with('\''))
                         {
@@ -428,7 +443,10 @@ impl DefaultEvaluator {
                         // Trim any leading/trailing whitespace
                         let value = value.trim().to_string();
 
-                        interpreter.aliases.insert(name, value);
+                        // Escape spaces in the value to preserve them during parsing
+                        let escaped_value = value.replace(' ', "\\ ");
+
+                        interpreter.aliases.insert(name, escaped_value);
                         Ok(0)
                     } else if args.len() == 1 {
                         // Show specific alias
@@ -1091,10 +1109,104 @@ impl DefaultEvaluator {
                             Ok(if path.exists() { 0 } else { 1 })
                         }
                     }
+                    "-s" => {
+                        // File exists and has size > 0
+                        let path = Path::new(&operand);
+                        Ok(
+                            if path.exists() && fs::metadata(path).is_ok_and(|m| m.len() > 0) {
+                                0
+                            } else {
+                                1
+                            },
+                        )
+                    }
                     _ => Ok(1), // Unknown unary operator
                 }
             }
             _ => Ok(1), // Invalid number of arguments
+        }
+    }
+
+    fn evaluate_history_expansion(
+        &mut self,
+        pattern: &str,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Check for recursion depth to prevent stack overflow
+        const MAX_HISTORY_RECURSION_DEPTH: u32 = 10;
+        if interpreter.history_expansion_depth >= MAX_HISTORY_RECURSION_DEPTH {
+            eprintln!("flash: history expansion recursion limit exceeded");
+            return Ok(1);
+        }
+
+        // Handle different history expansion patterns
+        let command = if pattern.is_empty() {
+            // !! - repeat last command
+            interpreter.history.last().cloned()
+        } else if pattern.chars().all(|c| c.is_ascii_digit()) {
+            // !n - repeat command number n (1-based)
+            if let Ok(n) = pattern.parse::<usize>() {
+                if n > 0 && n <= interpreter.history.len() {
+                    Some(interpreter.history[n - 1].clone())
+                } else {
+                    eprintln!("flash: !{}: event not found", pattern);
+                    return Ok(1);
+                }
+            } else {
+                None
+            }
+        } else if pattern.starts_with('-') && pattern[1..].chars().all(|c| c.is_ascii_digit()) {
+            // !-n - repeat command n positions back from current
+            if let Ok(n) = pattern[1..].parse::<usize>() {
+                let history_len = interpreter.history.len();
+                if n > 0 && n <= history_len {
+                    Some(interpreter.history[history_len - n].clone())
+                } else {
+                    eprintln!("flash: !{}: event not found", pattern);
+                    return Ok(1);
+                }
+            } else {
+                None
+            }
+        } else {
+            // !string - repeat most recent command starting with string
+            interpreter
+                .history
+                .iter()
+                .rev()
+                .find(|cmd| cmd.starts_with(pattern))
+                .cloned()
+        };
+
+        match command {
+            Some(cmd) => {
+                // Check if the command we're about to execute is itself a history expansion
+                // to prevent immediate infinite recursion
+                if cmd.trim() == format!("!{}", pattern)
+                    || (pattern.is_empty() && cmd.trim() == "!!")
+                {
+                    eprintln!("flash: history expansion would cause infinite recursion");
+                    return Ok(1);
+                }
+
+                // Print the command being executed (like bash does)
+                println!("{}", cmd);
+
+                // Increment recursion depth before executing
+                interpreter.history_expansion_depth += 1;
+
+                // Parse and execute the command using the correct method
+                let result = interpreter.execute_with_evaluator(&cmd, self);
+
+                // Decrement recursion depth after executing
+                interpreter.history_expansion_depth -= 1;
+
+                result
+            }
+            None => {
+                eprintln!("flash: !{}: event not found", pattern);
+                Ok(1)
+            }
         }
     }
 }
@@ -1110,6 +1222,7 @@ pub struct Interpreter {
     pub rc_file: Option<String>,
     pub args: Vec<String>,         // Command line arguments ($0, $1, $2, ...)
     pub return_value: Option<i32>, // Track return values from functions
+    pub history_expansion_depth: u32, // Track recursion depth for history expansion
 }
 
 impl Default for Interpreter {
@@ -1177,6 +1290,7 @@ impl Interpreter {
             rc_file,
             args: Vec::new(), // Initialize empty args, will be set when running scripts
             return_value: None, // Initialize return value as None
+            history_expansion_depth: 0, // Initialize history expansion depth
         };
 
         // Load and execute flashrc file if it exists
@@ -2755,6 +2869,7 @@ impl Interpreter {
             rc_file: None,
             args: self.args.clone(),
             return_value: None,
+            history_expansion_depth: 0,
         };
 
         let mut evaluator = DefaultEvaluator;
@@ -3039,6 +3154,7 @@ mod tests {
             rc_file: None,
             args: Vec::new(),
             return_value: None,
+            history_expansion_depth: 0,
         };
 
         // Set PWD variable like the real interpreter does
