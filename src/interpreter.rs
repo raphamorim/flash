@@ -449,10 +449,7 @@ impl DefaultEvaluator {
                         // Trim any leading/trailing whitespace
                         let value = value.trim().to_string();
 
-                        // Escape spaces in the value to preserve them during parsing
-                        let escaped_value = value.replace(' ', "\\ ");
-
-                        interpreter.aliases.insert(name, escaped_value);
+                        interpreter.aliases.insert(name, value);
                         Ok(0)
                     } else if args.len() == 1 {
                         // Show specific alias
@@ -4954,7 +4951,7 @@ mod tests {
         let mut interpreter = Interpreter::new();
         let mut evaluator = DefaultEvaluator;
 
-        // Test alias creation
+        // Test alias creation with unquoted value (spaces should separate arguments)
         let result = evaluator.evaluate_command(
             "alias",
             &["test_alias=echo hello world".to_string()],
@@ -4964,7 +4961,7 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
 
-        // Verify alias was created
+        // Verify alias was created (should store without additional escaping)
         assert!(interpreter.aliases.contains_key("test_alias"));
         assert_eq!(
             interpreter.aliases.get("test_alias").unwrap(),
@@ -4986,7 +4983,7 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
 
-        // Test alias with escaped spaces
+        // Test alias with escaped spaces (should preserve the escaping)
         let result = evaluator.evaluate_command(
             "alias",
             &["path_alias=/path/to/file\\ with\\ spaces".to_string()],
@@ -4996,10 +4993,31 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
 
-        // Verify escaped spaces alias
+        // Verify escaped spaces alias (escaping should be preserved from input)
         assert_eq!(
             interpreter.aliases.get("path_alias").unwrap(),
             "/path/to/file\\ with\\ spaces"
+        );
+
+        // Test that the path alias expands to a single argument
+        let stored_path_value = interpreter.aliases.get("path_alias").unwrap();
+        let parsed_path_parts = interpreter.parse_alias_value(stored_path_value);
+        assert_eq!(parsed_path_parts, vec!["/path/to/file with spaces"]);
+
+        // Test alias with quoted value (quotes should be removed, spaces preserved)
+        let result = evaluator.evaluate_command(
+            "alias",
+            &["quoted_alias=\"echo hello world\"".to_string()],
+            &[],
+            &mut interpreter,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        // Verify quoted alias (quotes removed, content preserved)
+        assert_eq!(
+            interpreter.aliases.get("quoted_alias").unwrap(),
+            "echo hello world"
         );
 
         // Test unalias

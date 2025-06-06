@@ -1400,6 +1400,42 @@ impl Parser {
                         self.next_token(); // Skip variable name
                     }
 
+                    // Check if the next token is also a Dollar or Word that should be concatenated
+                    // This handles cases like $i$j where consecutive variables should be one argument
+                    while let TokenKind::Dollar = &self.current_token.kind {
+                        match &self.current_token.kind {
+                            TokenKind::Dollar => {
+                                // Another variable reference - concatenate it
+                                var_ref.push('$');
+                                self.next_token(); // Skip $
+
+                                if let TokenKind::LBrace = &self.current_token.kind {
+                                    // Handle ${VAR} syntax
+                                    var_ref.push('{');
+                                    self.next_token(); // Skip {
+
+                                    if let TokenKind::Word(word) = &self.current_token.kind {
+                                        var_ref.push_str(word);
+                                        self.next_token(); // Skip variable name/expression
+                                    }
+
+                                    if let TokenKind::RBrace = &self.current_token.kind {
+                                        var_ref.push('}');
+                                        self.next_token(); // Skip }
+                                    }
+                                } else if let TokenKind::Word(word) = &self.current_token.kind {
+                                    // Handle $VAR syntax
+                                    var_ref.push_str(word);
+                                    self.next_token(); // Skip variable name
+                                }
+                            }
+                            _ => {
+                                // Stop concatenating when we hit something else
+                                break;
+                            }
+                        }
+                    }
+
                     args.push(var_ref);
                 }
                 TokenKind::CmdSubst => {
