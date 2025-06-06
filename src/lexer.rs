@@ -312,11 +312,18 @@ impl Lexer {
                     position: current_position,
                 }
             }
-            '{' => Token {
-                kind: TokenKind::LBrace,
-                value: "{".to_string(),
-                position: current_position,
-            },
+            '{' => {
+                // Check if this looks like brace expansion (e.g., {1..10}, {a..z})
+                if self.is_brace_expansion() {
+                    self.read_word()
+                } else {
+                    Token {
+                        kind: TokenKind::LBrace,
+                        value: "{".to_string(),
+                        position: current_position,
+                    }
+                }
+            }
             '}' => Token {
                 kind: TokenKind::RBrace,
                 value: "}".to_string(),
@@ -1095,6 +1102,34 @@ impl Lexer {
             value: word,
             position,
         }
+    }
+
+    // Check if the current position starts a brace expansion pattern like {1..10} or {a..z}
+    fn is_brace_expansion(&self) -> bool {
+        if self.ch != '{' {
+            return false;
+        }
+
+        // Look ahead to see if this matches a brace expansion pattern
+        let mut pos = self.position + 1;
+        let mut found_dots = false;
+        let mut brace_count = 1;
+
+        while pos < self.input.len() && brace_count > 0 {
+            match self.input[pos] {
+                '{' => brace_count += 1,
+                '}' => brace_count -= 1,
+                '.' if pos + 1 < self.input.len() && self.input[pos + 1] == '.' => {
+                    found_dots = true;
+                    pos += 1; // Skip the second dot
+                }
+                _ => {}
+            }
+            pos += 1;
+        }
+
+        // It's a brace expansion if we found ".." and the braces are balanced
+        found_dots && brace_count == 0
     }
 
     fn read_comment(&mut self) -> Token {

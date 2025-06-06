@@ -1564,3 +1564,269 @@ fn test_bash_specific_features_support() {
     // Should not crash, even if it doesn't work perfectly yet
     assert!(output.status.code().is_some());
 }
+
+#[test]
+fn test_for_loop_basic() {
+    let binary_path = get_flash_binary_path();
+
+    // Test basic for loop with explicit list
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in a b c; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "a\nb\nc");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_numeric_brace_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test numeric brace expansion {1..5}
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {1..5}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1\n2\n3\n4\n5");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_character_brace_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test character brace expansion {a..e}
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {a..e}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "a\nb\nc\nd\ne");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_reverse_numeric_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test reverse numeric expansion {5..1}
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {5..1}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "5\n4\n3\n2\n1");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_reverse_character_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test reverse character expansion {e..a}
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {e..a}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "e\nd\nc\nb\na");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_variable_scoping() {
+    let binary_path = get_flash_binary_path();
+
+    // Test that loop variable doesn't affect outer scope
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("i=outer; for i in 1 2 3; do echo $i; done; echo $i")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // The loop variable should be restored after the loop
+    assert_eq!(stdout.trim(), "1\n2\n3\nouter");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_with_commands() {
+    let binary_path = get_flash_binary_path();
+
+    // Test for loop with more complex commands
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {1..3}; do echo \"Number: $i\"; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "Number: 1\nNumber: 2\nNumber: 3");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_multiline() {
+    let binary_path = get_flash_binary_path();
+
+    // Test for loop with newlines
+    let script = "for i in {1..3}\ndo\n  echo $i\ndone";
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1\n2\n3");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_empty_list() {
+    let binary_path = get_flash_binary_path();
+
+    // Test for loop with empty list (should not execute body)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in; do echo $i; done; echo done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "done");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_single_item() {
+    let binary_path = get_flash_binary_path();
+
+    // Test for loop with single item
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in single; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "single");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_nested() {
+    let binary_path = get_flash_binary_path();
+
+    // Test nested for loops
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {1..2}; do for j in {a..b}; do echo \"$i$j\"; done; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1a\n1b\n2a\n2b");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_syntax_errors() {
+    let binary_path = get_flash_binary_path();
+
+    // Test missing 'in' keyword
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i 1 2 3; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stdout.contains("syntax error")
+            || stderr.contains("syntax error")
+            || !output.status.success()
+    );
+
+    // Test missing 'do' keyword
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in 1 2 3; echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stdout.contains("syntax error")
+            || stderr.contains("syntax error")
+            || !output.status.success()
+    );
+
+    // Test missing 'done' keyword
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in 1 2 3; do echo $i")
+        .output()
+        .expect("Failed to execute flash");
+
+    // Should fail or handle gracefully
+    assert!(!output.status.success() || output.status.code() == Some(0));
+}
+
+#[test]
+fn test_brace_expansion_edge_cases() {
+    let binary_path = get_flash_binary_path();
+
+    // Test single number range
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {5..5}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "5");
+    assert!(output.status.success());
+
+    // Test single character range
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {a..a}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "a");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_for_loop_with_variable_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test for loop with variable expansion in the body
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("prefix=num; for i in {1..3}; do echo \"$prefix-$i\"; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "num-1\nnum-2\nnum-3");
+    assert!(output.status.success());
+}

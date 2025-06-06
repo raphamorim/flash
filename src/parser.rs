@@ -88,6 +88,11 @@ pub enum Node {
         options: Vec<String>,
         command: String,
     },
+    ForLoop {
+        variable: String,
+        iterable: Box<Node>,
+        body: Box<Node>,
+    },
     Negation {
         command: Box<Node>,
     },
@@ -258,6 +263,7 @@ impl Parser {
                 Some(command_node)
             }
             TokenKind::If => Some(self.parse_if_statement()),
+            TokenKind::For => Some(self.parse_for_loop()),
             TokenKind::Elif => Some(self.parse_elif_branch()),
             TokenKind::Else => Some(self.parse_else_branch()),
             TokenKind::LParen => Some(self.parse_subshell()),
@@ -662,6 +668,142 @@ impl Parser {
         Node::ElseBranch {
             consequence: Box::new(consequence),
         }
+    }
+
+    // Parse for loop: for var in list; do ... done
+    fn parse_for_loop(&mut self) -> Node {
+        self.next_token(); // Skip "for"
+
+        // Parse variable name
+        let variable = if let TokenKind::Word(var_name) = &self.current_token.kind {
+            var_name.clone()
+        } else {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected variable name after 'for'".to_string()],
+                redirects: Vec::new(),
+            };
+        };
+        self.next_token();
+
+        // Expect "in"
+        if self.current_token.kind != TokenKind::In {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'in' after variable name".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "in"
+
+        // Parse iterable (could be words, brace expansion, etc.)
+        let iterable = self.parse_for_iterable();
+
+        // Skip optional semicolon or newline
+        while self.current_token.kind == TokenKind::Semicolon
+            || self.current_token.kind == TokenKind::Newline
+        {
+            self.next_token();
+        }
+
+        // Expect "do"
+        if self.current_token.kind != TokenKind::Do {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'do' after iterable".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "do"
+
+        // Parse body until "done"
+        let body = self.parse_until_token_kind(TokenKind::Done);
+
+        self.next_token(); // Skip "done"
+
+        Node::ForLoop {
+            variable,
+            iterable: Box::new(iterable),
+            body: Box::new(body),
+        }
+    }
+
+    // Parse the iterable part of a for loop (handles brace expansion)
+    fn parse_for_iterable(&mut self) -> Node {
+        let mut elements = Vec::new();
+
+        while self.current_token.kind != TokenKind::Semicolon
+            && self.current_token.kind != TokenKind::Newline
+            && self.current_token.kind != TokenKind::Do
+            && self.current_token.kind != TokenKind::EOF
+        {
+            if let TokenKind::Word(word) = &self.current_token.kind {
+                // Check for brace expansion like {1..10}
+                if word.starts_with('{') && word.contains("..") && word.ends_with('}') {
+                    if let Some(expanded) = self.expand_brace_range(word) {
+                        elements.extend(expanded);
+                    } else {
+                        elements.push(word.clone());
+                    }
+                } else {
+                    elements.push(word.clone());
+                }
+            }
+            self.next_token();
+        }
+
+        Node::Array { elements }
+    }
+
+    // Expand brace ranges like {1..10} or {a..z}
+    fn expand_brace_range(&self, word: &str) -> Option<Vec<String>> {
+        if !word.starts_with('{') || !word.ends_with('}') || !word.contains("..") {
+            return None;
+        }
+
+        let inner = &word[1..word.len() - 1]; // Remove { and }
+        let parts: Vec<&str> = inner.split("..").collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let start = parts[0];
+        let end = parts[1];
+
+        // Try numeric expansion
+        if let (Ok(start_num), Ok(end_num)) = (start.parse::<i32>(), end.parse::<i32>()) {
+            let mut result = Vec::new();
+            if start_num <= end_num {
+                for i in start_num..=end_num {
+                    result.push(i.to_string());
+                }
+            } else {
+                for i in (end_num..=start_num).rev() {
+                    result.push(i.to_string());
+                }
+            }
+            return Some(result);
+        }
+
+        // Try character expansion (single characters only)
+        if start.len() == 1 && end.len() == 1 {
+            let start_char = start.chars().next().unwrap();
+            let end_char = end.chars().next().unwrap();
+            let mut result = Vec::new();
+
+            if start_char <= end_char {
+                for c in start_char..=end_char {
+                    result.push(c.to_string());
+                }
+            } else {
+                for c in (end_char..=start_char).rev() {
+                    result.push(c.to_string());
+                }
+            }
+            return Some(result);
+        }
+
+        None
     }
 
     // method to parse a single command condition until a specific token kind is encountered

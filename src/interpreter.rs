@@ -89,6 +89,12 @@ impl Evaluator for DefaultEvaluator {
                 // Complete command is handled silently - just acknowledge it
                 Ok(0)
             }
+            Node::ForLoop {
+                variable,
+                iterable,
+                body,
+            } => self.evaluate_for_loop(variable, iterable, body, interpreter),
+            Node::Array { elements: _ } => Ok(0), // Arrays are used internally, return success
             Node::Negation { command } => {
                 // Logical negation - invert the exit code
                 let result = interpreter.evaluate_with_evaluator(command, self)?;
@@ -849,6 +855,53 @@ impl DefaultEvaluator {
     ) -> Result<i32, io::Error> {
         // Always execute the else consequence
         interpreter.evaluate_with_evaluator(consequence, self)
+    }
+
+    fn evaluate_for_loop(
+        &mut self,
+        variable: &str,
+        iterable: &Node,
+        body: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Get the list of values to iterate over
+        let values = match iterable {
+            Node::Array { elements } => elements.clone(),
+            _ => {
+                // If it's not an array, try to evaluate it as a command and get its output
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "for loop iterable must be an array",
+                ));
+            }
+        };
+
+        let mut last_exit_code = 0;
+
+        // Save the current value of the loop variable (if it exists)
+        let old_value = interpreter.variables.get(variable).cloned();
+
+        // Iterate over each value
+        for value in values {
+            // Set the loop variable
+            interpreter.variables.insert(variable.to_string(), value);
+
+            // Execute the body
+            last_exit_code = interpreter.evaluate_with_evaluator(body, self)?;
+
+            // Check for break/continue (not implemented yet, but structure is ready)
+            // if interpreter.should_break { break; }
+            // if interpreter.should_continue { continue; }
+        }
+
+        // Restore the old value of the loop variable
+        if let Some(old_val) = old_value {
+            interpreter.variables.insert(variable.to_string(), old_val);
+        } else {
+            interpreter.variables.remove(variable);
+        }
+
+        Ok(last_exit_code)
     }
 
     fn evaluate_command_substitution(
