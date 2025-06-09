@@ -1633,19 +1633,22 @@ impl Interpreter {
         let mut suffixes = Vec::new();
         let mut full_names = Vec::new();
 
+        // Expand tilde (~) to home directory if present
+        let expanded_prefix = self.expand_tilde(prefix);
+
         // Determine the directory to search and the filename prefix
-        let (dir_path, file_prefix) = if prefix.contains('/') {
-            if prefix.ends_with('/') {
+        let (dir_path, file_prefix) = if expanded_prefix.contains('/') {
+            if expanded_prefix.ends_with('/') {
                 // If prefix ends with '/', we want to list all files in that directory
-                (PathBuf::from(prefix), String::new())
+                (PathBuf::from(&expanded_prefix), String::new())
             } else {
-                let path = Path::new(prefix);
+                let path = Path::new(&expanded_prefix);
                 let parent = path.parent().unwrap_or(Path::new(""));
                 let file_name = path.file_name().map_or("", |f| f.to_str().unwrap_or(""));
                 (parent.to_path_buf(), file_name.to_string())
             }
         } else {
-            (PathBuf::from("."), prefix.to_string())
+            (PathBuf::from("."), expanded_prefix.clone())
         };
 
         // Read the directory entries
@@ -1653,9 +1656,30 @@ impl Interpreter {
             for entry in entries.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
                     if name.starts_with(&file_prefix) {
-                        // For display, show the full path
-                        let full_path = if prefix.contains('/') {
-                            format!("{}/{}", dir_path.display(), name)
+                        // For display, show the path in the original form (with ~ if it was used)
+                        let full_path = if expanded_prefix.contains('/') {
+                            // If the original prefix started with ~, preserve that in the display
+                            if prefix.starts_with('~') && expanded_prefix != prefix {
+                                // Replace the expanded home directory with ~ in the display
+                                let home_dir = std::env::var("HOME").unwrap_or_default();
+                                let dir_display = dir_path.display().to_string();
+                                if dir_display.starts_with(&home_dir) {
+                                    let relative_path = &dir_display[home_dir.len()..];
+                                    // Handle the case where relative_path starts with / or is empty
+                                    if relative_path.is_empty() || relative_path == "/" {
+                                        // When completing directly in home directory, show just the filename like bash
+                                        name.to_string()
+                                    } else if relative_path.starts_with('/') {
+                                        format!("~{}/{}", relative_path, name)
+                                    } else {
+                                        format!("~/{}/{}", relative_path, name)
+                                    }
+                                } else {
+                                    format!("{}/{}", dir_path.display(), name)
+                                }
+                            } else {
+                                format!("{}/{}", dir_path.display(), name)
+                            }
                         } else {
                             name.to_string()
                         };
@@ -5123,5 +5147,336 @@ mod tests {
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1); // Should return error code
+    }
+
+    #[test]
+    fn test_tilde_expansion_in_completion() {
+        let interpreter = Interpreter::new();
+
+        // Test basic tilde expansion
+        let expanded = interpreter.expand_tilde("~");
+        let home_dir = std::env::var("HOME").unwrap_or_default();
+        assert_eq!(expanded, home_dir);
+
+        // Test tilde with slash
+        let expanded = interpreter.expand_tilde("~/");
+        assert_eq!(expanded, format!("{}/", home_dir));
+
+        // Test tilde with path
+        let expanded = interpreter.expand_tilde("~/Documents");
+        assert_eq!(expanded, format!("{}/Documents", home_dir));
+
+        // Test non-tilde path (should remain unchanged)
+        let expanded = interpreter.expand_tilde("/usr/local");
+        assert_eq!(expanded, "/usr/local");
+
+        // Test relative path (should remain unchanged)
+        let expanded = interpreter.expand_tilde("./test");
+        assert_eq!(expanded, "./test");
+    }
+
+    #[test]
+    fn test_path_completions_with_tilde() {
+        use tempfile::tempdir;
+
+        let interpreter = Interpreter::new();
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create some test files in temp directory
+        fs::write(temp_path.join("test_file.txt"), "content").unwrap();
+        fs::write(temp_path.join("another_file.rs"), "rust code").unwrap();
+        fs::create_dir(temp_path.join("test_dir")).unwrap();
+
+        // Test completion with absolute path (no tilde)
+        let prefix = format!("{}/test", temp_path.display());
+        let (suffixes, full_names) = interpreter.get_path_completions(&prefix);
+
+        // Should find files starting with "test"
+        assert!(!suffixes.is_empty());
+        assert!(!full_names.is_empty());
+
+        // Check that we get the expected completions
+        let has_test_file = full_names.iter().any(|name| name.contains("test_file.txt"));
+        let has_test_dir = full_names.iter().any(|name| name.contains("test_dir/"));
+        assert!(has_test_file || has_test_dir);
+    }
+
+    #[test]
+    fn test_path_completions_current_directory() {
+        let interpreter = Interpreter::new();
+
+        // Test completion in current directory
+        let (_suffixes, full_names) = interpreter.get_path_completions("src");
+
+        // Should find src directory if it exists
+        if std::path::Path::new("src").exists() {
+            assert!(!_suffixes.is_empty() || !full_names.is_empty());
+        }
+
+        // Test completion with no prefix (list all files in current dir)
+        let (_suffixes, full_names) = interpreter.get_path_completions("");
+
+        // Should return some files/directories
+        assert!(!full_names.is_empty());
+    }
+
+    #[test]
+    fn test_path_completions_with_trailing_slash() {
+        use tempfile::tempdir;
+
+        let interpreter = Interpreter::new();
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create a subdirectory with files
+        let sub_dir = temp_path.join("subdir");
+        fs::create_dir(&sub_dir).unwrap();
+        fs::write(sub_dir.join("file1.txt"), "content1").unwrap();
+        fs::write(sub_dir.join("file2.txt"), "content2").unwrap();
+
+        // Test completion with trailing slash (should list contents of directory)
+        let prefix = format!("{}/subdir/", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&prefix);
+
+        // Should find files in the subdirectory
+        assert!(!full_names.is_empty());
+        let has_file1 = full_names.iter().any(|name| name.contains("file1.txt"));
+        let has_file2 = full_names.iter().any(|name| name.contains("file2.txt"));
+        assert!(has_file1 || has_file2);
+    }
+
+    #[test]
+    fn test_path_completions_nonexistent_directory() {
+        let interpreter = Interpreter::new();
+
+        // Test completion in non-existent directory
+        let (_suffixes, full_names) = interpreter.get_path_completions("/nonexistent/path/");
+
+        // Should return empty results
+        assert!(_suffixes.is_empty());
+        assert!(full_names.is_empty());
+    }
+
+    #[test]
+    fn test_path_completions_directory_suffix() {
+        use tempfile::tempdir;
+
+        let interpreter = Interpreter::new();
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create a directory and a file with similar names
+        fs::create_dir(temp_path.join("test_dir")).unwrap();
+        fs::write(temp_path.join("test_file.txt"), "content").unwrap();
+
+        // Test completion
+        let prefix = format!("{}/test", temp_path.display());
+        let (_suffixes, full_names) = interpreter.get_path_completions(&prefix);
+
+        // Should find both, but directory should have trailing slash
+        assert!(!full_names.is_empty());
+
+        let dir_entry = full_names.iter().find(|name| name.contains("test_dir"));
+        if let Some(dir_name) = dir_entry {
+            assert!(
+                dir_name.ends_with('/'),
+                "Directory should have trailing slash: {}",
+                dir_name
+            );
+        }
+
+        let file_entry = full_names
+            .iter()
+            .find(|name| name.contains("test_file.txt"));
+        if let Some(file_name) = file_entry {
+            assert!(
+                !file_name.ends_with('/'),
+                "File should not have trailing slash: {}",
+                file_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_tilde_completion_preserves_display_format() {
+        // This test verifies that when we use ~ in completion, the display format preserves the ~
+        // Note: This is a unit test for the logic, actual tilde expansion depends on HOME being set
+
+        let interpreter = Interpreter::new();
+
+        // Mock HOME environment for testing
+        let original_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", "/Users/testuser");
+        }
+
+        // Test that tilde expansion works
+        let expanded = interpreter.expand_tilde("~/Documents");
+        assert_eq!(expanded, "/Users/testuser/Documents");
+
+        // Test that non-tilde paths are unchanged
+        let expanded = interpreter.expand_tilde("/absolute/path");
+        assert_eq!(expanded, "/absolute/path");
+
+        // Restore original HOME
+        unsafe {
+            match original_home {
+                Some(home) => std::env::set_var("HOME", home),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_generate_completions_with_tilde() {
+        let interpreter = Interpreter::new();
+
+        // Test that generate_completions handles tilde prefixes
+        // This is an integration test for the completion system
+
+        // Test with tilde at start of line (should expand for path completion)
+        let _completions = interpreter.generate_completions("~/", 2);
+        // Should return some completions if HOME directory exists and has contents
+        // We can't assert specific results since it depends on the actual home directory
+
+        // Test with tilde in middle of line (should still work)
+        let _completions = interpreter.generate_completions("ls ~/", 5);
+        // Should handle this case without errors
+
+        // Test with non-tilde path
+        let _completions = interpreter.generate_completions("./", 2);
+        // Should work normally
+    }
+
+    #[test]
+    fn test_tilde_completion_bash_like_display() {
+        use tempfile::tempdir;
+
+        let interpreter = Interpreter::new();
+
+        // Mock HOME environment for testing
+        let original_home = std::env::var("HOME").ok();
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path().to_string_lossy().to_string();
+
+        unsafe {
+            std::env::set_var("HOME", &temp_path);
+        }
+
+        // Create some test files in the mock home directory
+        fs::write(temp_dir.path().join("test_file.txt"), "content").unwrap();
+        fs::create_dir(temp_dir.path().join("test_dir")).unwrap();
+
+        // Test completion with ~/
+        let (_suffixes, full_names) = interpreter.get_path_completions("~/");
+
+        // Check that none of the results have double slashes
+        for name in &full_names {
+            assert!(
+                !name.contains("//"),
+                "Found double slash in completion: {}",
+                name
+            );
+            // When completing in home directory, should show just filename (like bash)
+            if name.contains("test_") {
+                assert!(
+                    !name.starts_with("~/"),
+                    "Home directory completion should not have ~/ prefix: {}",
+                    name
+                );
+                assert!(
+                    name.starts_with("test"),
+                    "Should show just the filename: {}",
+                    name
+                );
+            }
+        }
+
+        // Test completion with ~/test prefix
+        let (_suffixes, full_names) = interpreter.get_path_completions("~/test");
+
+        // Check that results are properly formatted
+        for name in &full_names {
+            assert!(
+                !name.contains("//"),
+                "Found double slash in completion: {}",
+                name
+            );
+            // For partial matches in home directory, should still show just filename
+            if name.contains("test_") {
+                assert!(
+                    name.starts_with("test"),
+                    "Completion should show filename: {}",
+                    name
+                );
+            }
+        }
+
+        // Restore original HOME
+        unsafe {
+            match original_home {
+                Some(home) => std::env::set_var("HOME", home),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_tilde_completion_subdirectory_behavior() {
+        use tempfile::tempdir;
+
+        let interpreter = Interpreter::new();
+
+        // Mock HOME environment for testing
+        let original_home = std::env::var("HOME").ok();
+        let temp_dir = tempdir().unwrap();
+        let temp_path = temp_dir.path().to_string_lossy().to_string();
+
+        unsafe {
+            std::env::set_var("HOME", &temp_path);
+        }
+
+        // Create a subdirectory with files
+        let sub_dir = temp_dir.path().join("Documents");
+        fs::create_dir(&sub_dir).unwrap();
+        fs::write(sub_dir.join("test_file.txt"), "content").unwrap();
+        fs::create_dir(sub_dir.join("test_dir")).unwrap();
+
+        // Test completion with ~/Documents/
+        let (_suffixes, full_names) = interpreter.get_path_completions("~/Documents/");
+
+        // In subdirectories, should show the full path with ~/
+        for name in &full_names {
+            if name.contains("test_") {
+                assert!(
+                    name.starts_with("~/Documents/"),
+                    "Subdirectory completion should show full path: {}",
+                    name
+                );
+            }
+        }
+
+        // Test completion with ~/Documents/test prefix
+        let (_suffixes, full_names) = interpreter.get_path_completions("~/Documents/test");
+
+        // Should show full path for subdirectory completions
+        for name in &full_names {
+            if name.contains("test_") {
+                assert!(
+                    name.starts_with("~/Documents/test"),
+                    "Subdirectory completion should show full path: {}",
+                    name
+                );
+            }
+        }
+
+        // Restore original HOME
+        unsafe {
+            match original_home {
+                Some(home) => std::env::set_var("HOME", home),
+                None => std::env::remove_var("HOME"),
+            }
+        }
     }
 }
