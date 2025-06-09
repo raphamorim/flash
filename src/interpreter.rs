@@ -1412,6 +1412,19 @@ impl Interpreter {
             variables.insert("PWD".to_string(), current_dir.to_string_lossy().to_string());
         }
 
+        // Add /opt/homebrew/bin to PATH on macOS
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(current_path) = variables.get("PATH") {
+                if !current_path.contains("/opt/homebrew/bin") {
+                    let new_path = format!("/opt/homebrew/bin:{}", current_path);
+                    variables.insert("PATH".to_string(), new_path);
+                }
+            } else {
+                variables.insert("PATH".to_string(), "/opt/homebrew/bin".to_string());
+            }
+        }
+
         let home_dir = env::var("HOME").ok();
 
         let history_file = home_dir
