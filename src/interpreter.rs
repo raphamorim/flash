@@ -1832,9 +1832,22 @@ impl Interpreter {
         let original_termios = Termios::from_fd(fd)?;
         let mut raw_termios = original_termios;
 
-        let _guard = scopeguard::guard((), |_| {
-            let _ = tcsetattr(fd, TCSANOW, &original_termios);
-        });
+        // RAII guard to restore terminal settings on drop
+        struct TermiosGuard {
+            fd: i32,
+            original: Termios,
+        }
+
+        impl Drop for TermiosGuard {
+            fn drop(&mut self) {
+                let _ = tcsetattr(self.fd, TCSANOW, &self.original);
+            }
+        }
+
+        let _guard = TermiosGuard {
+            fd,
+            original: original_termios,
+        };
 
         // Ignore SIGINT (Ctrl+C) for the shell process
         // This prevents the shell from exiting when Ctrl+C is pressed

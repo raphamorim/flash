@@ -17,13 +17,10 @@ path = "src/bin.rs"
 [features]
 default = ["formatter", "interpreter"]
 formatter = []
-interpreter = ["os_pipe", "glob", "regex", "termios", "scopeguard", "libc"]
+interpreter = ["regex", "termios", "libc"]
 
 [dependencies]
-scopeguard = { version = "1.2.0", optional = true }
 termios = { version = "0.3.3", optional = true }
-os_pipe = { version = "1.2.1", optional = true }
-glob = { version = "0.3.2", optional = true }
 regex = { version = "1.11.1", optional = true }
 libc = { version = "0.2", optional = true }
 
