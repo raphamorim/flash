@@ -33,8 +33,8 @@ Legends:
 |                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
 |                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ✅  | |
 | **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ✅  | |
-|                       | `case` / `esac`                                 | ✅          | ✅   | ❌  | |
-|                       | `for` loops                                     | ✅          | ✅   | ❌  | |
+|                       | `case` / `esac`                                 | ✅          | ✅   | ✅  | |
+|                       | `for` loops                                     | ✅          | ✅   | ✅  | |
 |                       | `while`, `until` loops                          | ✅          | ✅   | ❌  | |
 |                       | `select` loop                                   | ❌          | ✅   | ❌  | |
 |                       | `[[ ... ]]` test command                        | ❌          | ✅   | ✅  | Extended test |
@@ -49,13 +49,13 @@ Legends:
 |                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ❌  | |
 | **Arrays**            | Indexed arrays                                  | ❌          | ✅   | ✅  | `arr=(a b c)` |
 |                       | Associative arrays                              | ❌          | ✅   | ❌  | `declare -A` |
-| **Parameter Expansion** | `${var}` basic expansion                    | ✅          | ✅   | ❌  | |
+| **Parameter Expansion** | `${var}` basic expansion                      | ✅          | ✅   | ❌  | |
 |                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | ❌  | |
 |                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | ❌  | |
 |                       | `${!var}` indirect expansion                    | ❌          | ✅   | ❌  | |
 |                       | `${var[@]}` / `${var[*]}` array expansion       | ❌          | ✅   | ❌  | |
-| **Command Execution** | Pipelines (`|`)                                 | ✅          | ✅   | ❌  | |
-|                       | Logical AND / OR (`&&`, `||`)                   | ✅          | ✅   | ❌  | |
+| **Command Execution** | Pipelines                                       | ✅          | ✅   | ❌  | |
+|                       | Logical AND / OR (`&&`, ||)                     | ✅          | ✅   | ❌  | |
 |                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | ❌  | |
 |                       | Subshell (`( )`)                                | ✅          | ✅   | ❌  | |
 |                       | Coprocesses (`coproc`)                          | ❌          | ✅   | ❌  | |
@@ -64,10 +64,10 @@ Legends:
 |                       | `let`, `local`, `export`                        | ✅          | ✅   | ✅  | |
 | **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ❌  | |
 |                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
-| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ❌  | |
+| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ✅  | |
 |                       | Extended globbing (`extglob`)                   | ❌          | ✅   | ❌  | Requires `shopt` |
 |                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ✅  | Note for the default interpreter: it's `$FLASH_VERSION` instead |
-|                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ❌  | `source` is Bash synonym |
+|                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ✅  | `source` is Bash synonym |
 
 ## As shell
 
@@ -141,10 +141,10 @@ You can customize your shell prompt by setting the `PROMPT` variable in your `.f
 export PROMPT="flash> "
 
 # Prompt with current directory
-export PROMPT="flash:$PWD$ "
+export PROMPT='flash:$PWD$ '
 
 # Prompt with username and hostname
-export PROMPT="$USER@$HOSTNAME:$PWD$ "
+export PROMPT='$USER@$HOSTNAME:$PWD$ '
 ```
 
 The `PROMPT` variable supports variable expansion, so you can use any environment variables in your prompt.
@@ -153,7 +153,7 @@ The `PROMPT` variable supports variable expansion, so you can use any environmen
 
 ```bash
 # Custom prompt
-export PROMPT="flash:$PWD$ "
+export PROMPT='flash:$PWD$ '
 
 # Environment variables
 export EDITOR=vim

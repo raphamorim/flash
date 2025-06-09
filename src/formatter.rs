@@ -618,6 +618,68 @@ impl Formatter {
 
                 result
             }
+            Node::CaseStatement {
+                expression,
+                patterns,
+            } => {
+                let mut result = self.indent();
+                result.push_str("case ");
+
+                // Format the expression
+                let expr_str = self.format(expression);
+                result.push_str(expr_str.trim_start());
+
+                result.push_str(" in");
+
+                if !self.config.never_split {
+                    result.push('\n');
+                }
+
+                // Format each pattern
+                for pattern in patterns {
+                    if !self.config.never_split {
+                        self.indent_level += 1;
+                        result.push_str(&self.indent());
+                        self.indent_level -= 1;
+                    } else {
+                        result.push(' ');
+                    }
+
+                    // Format pattern list
+                    result.push_str(&pattern.patterns.join(" | "));
+                    result.push(')');
+
+                    if !self.config.never_split {
+                        result.push('\n');
+
+                        // Format the body with increased indent
+                        self.indent_level += 1;
+                        result.push_str(&self.format(&pattern.body));
+                        self.indent_level -= 1;
+
+                        result.push('\n');
+                        self.indent_level += 1;
+                        result.push_str(&self.indent());
+                        self.indent_level -= 1;
+                        result.push_str(";;");
+                        result.push('\n');
+                    } else {
+                        result.push(' ');
+                        let body_str = self.format(&pattern.body);
+                        result.push_str(body_str.trim_start());
+                        result.push_str(" ;; ");
+                    }
+                }
+
+                if !self.config.never_split {
+                    result.push_str(&self.indent());
+                } else {
+                    result.push(' ');
+                }
+                result.push_str("esac");
+
+                result
+            }
             _ => "".to_string(),
         }
     }

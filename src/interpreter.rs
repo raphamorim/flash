@@ -7,6 +7,7 @@
 
 use crate::flash;
 use crate::lexer::Lexer;
+use crate::parser::CasePattern;
 use crate::parser::Node;
 use crate::parser::Parser;
 use crate::parser::Redirect;
@@ -70,6 +71,10 @@ impl Evaluator for DefaultEvaluator {
                 consequence,
             } => self.evaluate_elif_branch(condition, consequence, interpreter),
             Node::ElseBranch { consequence } => self.evaluate_else_branch(consequence, interpreter),
+            Node::CaseStatement {
+                expression,
+                patterns,
+            } => self.evaluate_case_statement(expression, patterns, interpreter),
             Node::Function { name, body } => {
                 self.evaluate_function_definition(name, body, interpreter)
             }
@@ -852,6 +857,82 @@ impl DefaultEvaluator {
     ) -> Result<i32, io::Error> {
         // Always execute the else consequence
         interpreter.evaluate_with_evaluator(consequence, self)
+    }
+
+    fn evaluate_case_statement(
+        &mut self,
+        expression: &Node,
+        patterns: &[CasePattern],
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Evaluate the expression to get the value to match against
+        let expr_result = match expression {
+            Node::StringLiteral(s) => s.clone(),
+            Node::Command { name, args, .. } => {
+                // For commands, use the command name and args as the value
+                format!("{} {}", name, args.join(" "))
+            }
+            Node::CommandSubstitution { command } => {
+                // Evaluate the command substitution and get its output
+                match interpreter.evaluate_with_evaluator(command, self) {
+                    Ok(_) => {
+                        // Try to get the output from the command
+                        // For now, we'll use a simple approach
+                        "".to_string() // This is a placeholder - in a full implementation,
+                        // we'd capture the command output
+                    }
+                    Err(_) => "".to_string(),
+                }
+            }
+            _ => {
+                // For other node types, try to convert to string representation
+                format!("{:?}", expression)
+            }
+        };
+
+        // Expand variables in the expression result
+        let expanded_expr = interpreter.expand_variables(&expr_result);
+
+        // Try to match against each pattern
+        for pattern in patterns {
+            for pattern_str in &pattern.patterns {
+                // Expand variables in the pattern
+                let expanded_pattern = interpreter.expand_variables(pattern_str);
+
+                // Check for exact match or wildcard match
+                if self.pattern_matches(&expanded_expr, &expanded_pattern) {
+                    // Execute the body for this pattern
+                    return interpreter.evaluate_with_evaluator(&pattern.body, self);
+                }
+            }
+        }
+
+        // No pattern matched, return success (like bash)
+        Ok(0)
+    }
+
+    fn pattern_matches(&self, value: &str, pattern: &str) -> bool {
+        // Handle special case patterns
+        if pattern == "*" {
+            return true; // Wildcard matches everything
+        }
+
+        // Simple pattern matching - exact match or basic wildcard
+        if pattern.contains('*') {
+            // Convert shell pattern to regex
+            let regex_pattern = pattern
+                .replace("*", ".*")
+                .replace("?", ".")
+                .replace("[", "\\[")
+                .replace("]", "\\]");
+
+            if let Ok(regex) = Regex::new(&format!("^{}$", regex_pattern)) {
+                return regex.is_match(value);
+            }
+        }
+
+        // Exact match
+        value == pattern
     }
 
     fn evaluate_for_loop(

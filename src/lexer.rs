@@ -9,34 +9,37 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Word(String),
-    Assignment,    // =
-    Pipe,          // |
-    Semicolon,     // ;
-    Newline,       // \n
-    And,           // &&
-    Background,    // & (add this new token)
-    Or,            // ||
-    LParen,        // (
-    RParen,        // )
-    LBrace,        // {
-    RBrace,        // }
-    Less,          // <
-    Great,         // >
-    DGreat,        // >>
-    Dollar,        // $
-    Quote,         // "
-    SingleQuote,   // '
-    Backtick,      // `
-    Comment,       // #
-    CmdSubst,      // $(
-    ArithSubst,    // $((
-    ExtGlob(char), // For ?(, *(, +(, @(, !(
+    Assignment,      // =
+    Pipe,            // |
+    Semicolon,       // ;
+    DoubleSemicolon, // ;;
+    Newline,         // \n
+    And,             // &&
+    Background,      // & (add this new token)
+    Or,              // ||
+    LParen,          // (
+    RParen,          // )
+    LBrace,          // {
+    RBrace,          // }
+    Less,            // <
+    Great,           // >
+    DGreat,          // >>
+    Dollar,          // $
+    Quote,           // "
+    SingleQuote,     // '
+    Backtick,        // `
+    Comment,         // #
+    CmdSubst,        // $(
+    ArithSubst,      // $((
+    ExtGlob(char),   // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
     Then, // then keyword
     Elif, // elif keyword
     Else, // else keyword
     Fi,   // fi keyword
+    Case, // case keyword
+    Esac, // esac keyword
     // Function declaration keyword
     Function, // function keyword
     // Loop keywords
@@ -265,11 +268,22 @@ impl Lexer {
                     }
                 }
             }
-            ';' => Token {
-                kind: TokenKind::Semicolon,
-                value: ";".to_string(),
-                position: current_position,
-            },
+            ';' => {
+                if self.peek_char() == ';' {
+                    self.read_char();
+                    Token {
+                        kind: TokenKind::DoubleSemicolon,
+                        value: ";;".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    Token {
+                        kind: TokenKind::Semicolon,
+                        value: ";".to_string(),
+                        position: current_position,
+                    }
+                }
+            }
             '&' => {
                 if self.peek_char() == '&' {
                     self.read_char();
@@ -1082,6 +1096,8 @@ impl Lexer {
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             "fi" => TokenKind::Fi,
+            "case" => TokenKind::Case,
+            "esac" => TokenKind::Esac,
             "for" => TokenKind::For,
             "while" => TokenKind::While,
             "until" => TokenKind::Until,

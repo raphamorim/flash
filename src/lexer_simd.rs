@@ -109,6 +109,8 @@ impl Lexer {
             "elif" => TokenKind::Elif,
             "else" => TokenKind::Else,
             "fi" => TokenKind::Fi,
+            "case" => TokenKind::Case,
+            "esac" => TokenKind::Esac,
             "for" => TokenKind::For,
             "while" => TokenKind::While,
             "until" => TokenKind::Until,

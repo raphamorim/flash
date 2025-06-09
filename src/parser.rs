@@ -58,6 +58,10 @@ pub enum Node {
     ElseBranch {
         consequence: Box<Node>,
     },
+    CaseStatement {
+        expression: Box<Node>,
+        patterns: Vec<CasePattern>,
+    },
     Array {
         elements: Vec<String>,
     },
@@ -96,6 +100,13 @@ pub enum Node {
     Negation {
         command: Box<Node>,
     },
+}
+
+/// Case pattern for case statements
+#[derive(Debug, Clone, PartialEq)]
+pub struct CasePattern {
+    pub patterns: Vec<String>, // Multiple patterns separated by |
+    pub body: Box<Node>,
 }
 
 /// Redirection types
@@ -263,6 +274,7 @@ impl Parser {
                 Some(command_node)
             }
             TokenKind::If => Some(self.parse_if_statement()),
+            TokenKind::Case => Some(self.parse_case_statement()),
             TokenKind::For => Some(self.parse_for_loop()),
             TokenKind::Elif => Some(self.parse_elif_branch()),
             TokenKind::Else => Some(self.parse_else_branch()),
@@ -667,6 +679,140 @@ impl Parser {
 
         Node::ElseBranch {
             consequence: Box::new(consequence),
+        }
+    }
+
+    // Parse case statement: case word in pattern) commands ;; ... esac
+    fn parse_case_statement(&mut self) -> Node {
+        self.next_token(); // Skip "case"
+
+        // Parse the expression to match against - this should be a simple word or quoted string
+        let expression = match &self.current_token.kind {
+            TokenKind::Word(word) => {
+                let expr = Node::StringLiteral(word.clone());
+                self.next_token();
+                expr
+            }
+            TokenKind::Quote => {
+                // Handle quoted strings
+                self.parse_quoted_string(TokenKind::Quote)
+            }
+            TokenKind::CmdSubst => {
+                // Handle command substitution
+                self.parse_command_substitution()
+            }
+            _ => {
+                // Fallback to parsing as a condition
+                self.parse_condition_until_token_kind(TokenKind::In)
+            }
+        };
+
+        // Expect "in" keyword
+        if self.current_token.kind == TokenKind::In {
+            self.next_token(); // Skip "in"
+        }
+
+        let mut patterns = Vec::new();
+
+        // Parse case patterns until we hit "esac"
+        while self.current_token.kind != TokenKind::Esac
+            && self.current_token.kind != TokenKind::EOF
+        {
+            // Skip any newlines or whitespace
+            while self.current_token.kind == TokenKind::Newline {
+                self.next_token();
+            }
+
+            if self.current_token.kind == TokenKind::Esac {
+                break;
+            }
+
+            // Parse pattern(s) - can be multiple patterns separated by |
+            let mut pattern_list = Vec::new();
+
+            // Parse the first pattern
+            if let TokenKind::Word(pattern) = &self.current_token.kind {
+                pattern_list.push(pattern.clone());
+                self.next_token();
+
+                // Check for additional patterns separated by |
+                while self.current_token.kind == TokenKind::Pipe {
+                    self.next_token(); // Skip |
+                    if let TokenKind::Word(pattern) = &self.current_token.kind {
+                        pattern_list.push(pattern.clone());
+                        self.next_token();
+                    }
+                }
+            }
+
+            // Expect )
+            if self.current_token.kind == TokenKind::RParen {
+                self.next_token(); // Skip )
+            }
+
+            // Skip any newlines
+            while self.current_token.kind == TokenKind::Newline {
+                self.next_token();
+            }
+
+            // Parse the body until we hit ;; or esac
+            // Use a simpler approach - parse until we hit ;; or esac
+            let mut body_statements = Vec::new();
+            let mut body_operators = Vec::new();
+
+            while self.current_token.kind != TokenKind::DoubleSemicolon
+                && self.current_token.kind != TokenKind::Esac
+                && self.current_token.kind != TokenKind::EOF
+            {
+                if let Some(statement) = self.parse_statement() {
+                    body_statements.push(statement);
+
+                    // Handle operators between statements
+                    if self.current_token.kind == TokenKind::Semicolon {
+                        body_operators.push(";".to_string());
+                        self.next_token();
+                    } else if self.current_token.kind == TokenKind::Newline {
+                        body_operators.push("\n".to_string());
+                        self.next_token();
+                    }
+                }
+            }
+
+            let body = if body_statements.len() == 1 && body_operators.is_empty() {
+                body_statements.into_iter().next().unwrap()
+            } else {
+                Node::List {
+                    statements: body_statements,
+                    operators: body_operators,
+                }
+            };
+
+            // Skip ;; if present
+            if self.current_token.kind == TokenKind::DoubleSemicolon {
+                self.next_token();
+            }
+
+            // Skip any newlines after ;;
+            while self.current_token.kind == TokenKind::Newline {
+                self.next_token();
+            }
+
+            if !pattern_list.is_empty() {
+                patterns.push(CasePattern {
+                    patterns: pattern_list,
+                    body: Box::new(body),
+                });
+            }
+        }
+
+        // Skip "esac"
+        if self.current_token.kind == TokenKind::Esac {
+            self.next_token();
+        }
+
+        Node::CaseStatement {
+            expression: Box::new(expression),
+            patterns,
         }
     }
 
@@ -5743,6 +5889,113 @@ fi
                         "Expected Negation node in statements, got: {:?}",
                         &statements[0]
                     ),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_case_statement_parsing() {
+        let input = r#"case hello in
+            pattern1) echo "match1" ;;
+            pattern2) echo "match2" ;;
+        esac"#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::CaseStatement {
+                        expression,
+                        patterns,
+                    } => {
+                        // Check expression - it might be parsed as a command or string literal
+                        match expression.as_ref() {
+                            Node::StringLiteral(s) => assert_eq!(s, "hello"),
+                            Node::Command { name, .. } => {
+                                // If parsed as command, the name should be empty and we should have the variable
+                                assert!(name.is_empty() || name == "hello");
+                            }
+                            _ => panic!(
+                                "Expected StringLiteral or Command for case expression, got: {:?}",
+                                expression
+                            ),
+                        }
+
+                        // Check patterns - should have 2 simple patterns
+                        assert_eq!(patterns.len(), 2);
+
+                        // First pattern
+                        assert_eq!(patterns[0].patterns, vec!["pattern1"]);
+
+                        // Second pattern
+                        assert_eq!(patterns[1].patterns, vec!["pattern2"]);
+                    }
+                    _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_simple_case_statement() {
+        let input = r#"case hello in
+            hello) echo "found" ;;
+        esac"#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::CaseStatement {
+                        expression,
+                        patterns,
+                    } => {
+                        match expression.as_ref() {
+                            Node::StringLiteral(s) => assert_eq!(s, "hello"),
+                            _ => panic!("Expected StringLiteral for case expression"),
+                        }
+
+                        assert_eq!(patterns.len(), 1);
+                        assert_eq!(patterns[0].patterns, vec!["hello"]);
+                    }
+                    _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
+                }
+            }
+            _ => panic!("Expected List node, got: {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_case_statement_with_variables() {
+        let input = r#"case "$USER" in
+            root) echo "admin" ;;
+            *) echo "user" ;;
+        esac"#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::CaseStatement {
+                        expression,
+                        patterns,
+                    } => {
+                        match expression.as_ref() {
+                            Node::StringLiteral(s) => assert_eq!(s, "$USER"),
+                            _ => panic!("Expected StringLiteral for case expression"),
+                        }
+
+                        assert_eq!(patterns.len(), 2);
+                        assert_eq!(patterns[0].patterns, vec!["root"]);
+                        assert_eq!(patterns[1].patterns, vec!["*"]);
+                    }
+                    _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
                 }
             }
             _ => panic!("Expected List node, got: {:?}", result),

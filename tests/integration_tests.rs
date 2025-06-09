@@ -1830,3 +1830,184 @@ fn test_for_loop_with_variable_expansion() {
     assert_eq!(stdout.trim(), "num-1\nnum-2\nnum-3");
     assert!(output.status.success());
 }
+
+#[test]
+fn test_case_statement_basic() {
+    let binary_path = get_flash_binary_path();
+
+    // Test basic case statement with exact match
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "hello" in
+            hello) echo "matched" ;;
+            *) echo "no match" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "matched");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_wildcard() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with wildcard pattern
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "anything" in
+            hello) echo "hello match" ;;
+            *) echo "wildcard match" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "wildcard match");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_multiple_patterns() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with multiple patterns separated by |
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "world" in
+            hello|hi) echo "greeting" ;;
+            world|earth) echo "planet" ;;
+            *) echo "unknown" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "planet");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_with_variables() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with variable expansion
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"var="test"
+        case "$var" in
+            test) echo "variable matched" ;;
+            *) echo "no match" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "variable matched");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_no_match() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with no matching pattern and no wildcard
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "nomatch" in
+            hello) echo "hello" ;;
+            world) echo "world" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_complex_body() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with complex body containing multiple commands
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "complex" in
+            complex)
+                echo "first line"
+                echo "second line"
+                ;;
+            *) echo "simple" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "first line\nsecond line");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_case_statement_pattern_matching() {
+    let binary_path = get_flash_binary_path();
+
+    // Test case statement with pattern matching (basic wildcard)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"case "file.txt" in
+            *.txt) echo "text file" ;;
+            *.log) echo "log file" ;;
+            *) echo "other file" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "text file");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_nested_case_statements() {
+    let binary_path = get_flash_binary_path();
+
+    // Test nested case statements
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg(
+            r#"outer="file"
+        case "$outer" in
+            file)
+                inner="txt"
+                case "$inner" in
+                    txt) echo "nested match" ;;
+                    *) echo "inner no match" ;;
+                esac
+                ;;
+            *) echo "outer no match" ;;
+        esac"#,
+        )
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "nested match");
+    assert!(output.status.success());
+}
