@@ -209,7 +209,6 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "tempfile",
- "termios",
 ]
 
 [[package]]
@@ -520,15 +519,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "termios"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "411c5bf740737c7918b8b1fe232dca4dc9f8e754b8ad5e20966814001ed0ac6b"
-dependencies = [
- "libc",
 ]
 
 [[package]]

@@ -18,11 +18,31 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
+use std::mem;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use termios::{ECHO, ICANON, TCSANOW, Termios, VMIN, VTIME, tcsetattr};
+
+// Terminal control functions using libc
+fn tcgetattr(fd: i32) -> Result<libc::termios, io::Error> {
+    let mut termios = unsafe { mem::zeroed::<libc::termios>() };
+    let result = unsafe { libc::tcgetattr(fd, &mut termios) };
+    if result == 0 {
+        Ok(termios)
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+fn tcsetattr(fd: i32, optional_actions: i32, termios: &libc::termios) -> Result<(), io::Error> {
+    let result = unsafe { libc::tcsetattr(fd, optional_actions, termios) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
 
 pub trait Evaluator {
     fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error>;
@@ -1829,18 +1849,18 @@ impl Interpreter {
             ));
         }
 
-        let original_termios = Termios::from_fd(fd)?;
+        let original_termios = tcgetattr(fd)?;
         let mut raw_termios = original_termios;
 
         // RAII guard to restore terminal settings on drop
         struct TermiosGuard {
             fd: i32,
-            original: Termios,
+            original: libc::termios,
         }
 
         impl Drop for TermiosGuard {
             fn drop(&mut self) {
-                let _ = tcsetattr(self.fd, TCSANOW, &self.original);
+                let _ = tcsetattr(self.fd, libc::TCSANOW, &self.original);
             }
         }
 
@@ -1913,8 +1933,8 @@ impl Interpreter {
     fn read_line_with_completion(
         &self,
         prompt: &str,
-        original_termios: &Termios,
-        raw_termios: &mut Termios,
+        original_termios: &libc::termios,
+        raw_termios: &mut libc::termios,
         history_index: &mut usize,
     ) -> io::Result<String> {
         let mut stdin = io::stdin();
@@ -1929,17 +1949,17 @@ impl Interpreter {
 
         loop {
             // Switch to raw mode to read individual characters
-            raw_termios.c_lflag &= !(ICANON | ECHO);
-            raw_termios.c_cc[VMIN] = 1;
-            raw_termios.c_cc[VTIME] = 0;
-            tcsetattr(fd, TCSANOW, raw_termios)?;
+            raw_termios.c_lflag &= !(libc::ICANON | libc::ECHO);
+            raw_termios.c_cc[libc::VMIN] = 1;
+            raw_termios.c_cc[libc::VTIME] = 0;
+            tcsetattr(fd, libc::TCSANOW, raw_termios)?;
 
             // Read a single byte
             let mut input_byte = [0u8; 1];
             stdin.read_exact(&mut input_byte)?;
 
             // Switch back to canonical mode for printing
-            tcsetattr(fd, TCSANOW, original_termios)?;
+            tcsetattr(fd, libc::TCSANOW, original_termios)?;
 
             match input_byte[0] {
                 // Enter
@@ -2248,11 +2268,11 @@ impl Interpreter {
                     // Read characters for search
                     loop {
                         // Read a single byte in raw mode
-                        raw_termios.c_lflag &= !(ICANON | ECHO);
-                        tcsetattr(fd, TCSANOW, raw_termios)?;
+                        raw_termios.c_lflag &= !(libc::ICANON | libc::ECHO);
+                        tcsetattr(fd, libc::TCSANOW, raw_termios)?;
                         let mut search_byte = [0u8; 1];
                         stdin.read_exact(&mut search_byte)?;
-                        tcsetattr(fd, TCSANOW, original_termios)?;
+                        tcsetattr(fd, libc::TCSANOW, original_termios)?;
 
                         match search_byte[0] {
                             // Enter - accept the current match

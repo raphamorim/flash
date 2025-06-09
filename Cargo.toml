@@ -17,10 +17,9 @@ path = "src/bin.rs"
 [features]
 default = ["formatter", "interpreter"]
 formatter = []
-interpreter = ["regex", "termios", "libc"]
+interpreter = ["regex", "libc"]
 
 [dependencies]
-termios = { version = "0.3.3", optional = true }
 regex = { version = "1.11.1", optional = true }
 libc = { version = "0.2", optional = true }
 
