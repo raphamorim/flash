@@ -1630,6 +1630,33 @@ fn test_for_loop_reverse_numeric_expansion() {
 }
 
 #[test]
+fn test_for_loop_comma_separated_brace_expansion() {
+    let binary_path = get_flash_binary_path();
+
+    // Test comma-separated brace expansion {a,b,c}
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {red,green,blue}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "red\ngreen\nblue");
+    assert!(output.status.success());
+
+    // Test mixed types in comma-separated expansion
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("for i in {1,hello,3}; do echo $i; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1\nhello\n3");
+    assert!(output.status.success());
+}
+
+#[test]
 fn test_for_loop_reverse_character_expansion() {
     let binary_path = get_flash_binary_path();
 

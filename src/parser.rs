@@ -884,9 +884,12 @@ impl Parser {
             && self.current_token.kind != TokenKind::EOF
         {
             if let TokenKind::Word(word) = &self.current_token.kind {
-                // Check for brace expansion like {1..10}
-                if word.starts_with('{') && word.contains("..") && word.ends_with('}') {
-                    if let Some(expanded) = self.expand_brace_range(word) {
+                // Check for brace expansion like {1..10} or {a,b,c}
+                if word.starts_with('{')
+                    && word.ends_with('}')
+                    && (word.contains("..") || word.contains(','))
+                {
+                    if let Some(expanded) = self.expand_brace_pattern(word) {
                         elements.extend(expanded);
                     } else {
                         elements.push(word.clone());
@@ -899,6 +902,32 @@ impl Parser {
         }
 
         Node::Array { elements }
+    }
+
+    // Expand brace patterns like {1..10}, {a..z}, or {a,b,c}
+    fn expand_brace_pattern(&self, word: &str) -> Option<Vec<String>> {
+        if !word.starts_with('{') || !word.ends_with('}') {
+            return None;
+        }
+
+        let inner = &word[1..word.len() - 1]; // Remove { and }
+
+        // Check for range expansion first
+        if inner.contains("..") {
+            return self.expand_brace_range(word);
+        }
+
+        // Check for comma-separated expansion
+        if inner.contains(',') {
+            let items: Vec<&str> = inner.split(',').collect();
+            let mut result = Vec::new();
+            for item in items {
+                result.push(item.trim().to_string());
+            }
+            return Some(result);
+        }
+
+        None
     }
 
     // Expand brace ranges like {1..10} or {a..z}

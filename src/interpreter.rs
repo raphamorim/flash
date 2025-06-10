@@ -3082,20 +3082,164 @@ impl Interpreter {
         let mut expanded_args = Vec::new();
 
         for arg in args {
-            if self.contains_glob_pattern(arg) {
-                let matches = self.glob_match(arg);
-                if matches.is_empty() {
-                    // If no matches found, keep the original pattern
-                    expanded_args.push(arg.clone());
+            // First expand brace patterns
+            let brace_expanded = self.expand_brace_patterns(arg);
+
+            // Then expand glob patterns for each brace-expanded result
+            for brace_arg in brace_expanded {
+                if self.contains_glob_pattern(&brace_arg) {
+                    let matches = self.glob_match(&brace_arg);
+                    if matches.is_empty() {
+                        // If no matches found, keep the original pattern
+                        expanded_args.push(brace_arg);
+                    } else {
+                        expanded_args.extend(matches);
+                    }
                 } else {
-                    expanded_args.extend(matches);
+                    expanded_args.push(brace_arg);
                 }
-            } else {
-                expanded_args.push(arg.clone());
             }
         }
 
         expanded_args
+    }
+
+    /// Expand brace patterns like {1..5} or {a..z}
+    pub fn expand_brace_patterns(&self, input: &str) -> Vec<String> {
+        // Check if the input contains brace expansion patterns
+        if !input.contains('{') || !input.contains('}') {
+            return vec![input.to_string()];
+        }
+
+        // Find all brace expansion patterns in the input
+        let mut result = vec![input.to_string()];
+
+        // Process each string in result for brace expansions
+        let mut i = 0;
+        while i < result.len() {
+            let current = &result[i].clone();
+            if let Some(expanded) = self.expand_single_brace_pattern(current) {
+                // Replace the current item with expanded items
+                result.remove(i);
+                for (j, item) in expanded.into_iter().enumerate() {
+                    result.insert(i + j, item);
+                }
+                // Continue processing from the same index since we may have more patterns
+                continue;
+            }
+            i += 1;
+        }
+
+        result
+    }
+
+    /// Expand a single brace pattern in a string
+    fn expand_single_brace_pattern(&self, input: &str) -> Option<Vec<String>> {
+        // Find the first brace expansion pattern
+        let mut brace_start = None;
+        let mut brace_end = None;
+        let mut brace_count = 0;
+
+        for (i, c) in input.char_indices() {
+            match c {
+                '{' => {
+                    if brace_start.is_none() {
+                        brace_start = Some(i);
+                    }
+                    brace_count += 1;
+                }
+                '}' => {
+                    brace_count -= 1;
+                    if brace_count == 0 && brace_start.is_some() {
+                        brace_end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let (Some(start), Some(end)) = (brace_start, brace_end) {
+            let prefix = &input[..start];
+            let suffix = &input[end + 1..];
+            let brace_content = &input[start + 1..end];
+
+            // Check for range expansion (e.g., "1..5" or "a..z")
+            if brace_content.contains("..") {
+                if let Some(range_items) = self.expand_brace_range(brace_content) {
+                    let mut results = Vec::new();
+                    for item in range_items {
+                        results.push(format!("{}{}{}", prefix, item, suffix));
+                    }
+                    return Some(results);
+                }
+            }
+
+            // Check for comma-separated expansion (e.g., "a,b,c")
+            if brace_content.contains(',') {
+                let items: Vec<&str> = brace_content.split(',').collect();
+                let mut results = Vec::new();
+                for item in items {
+                    results.push(format!("{}{}{}", prefix, item.trim(), suffix));
+                }
+                return Some(results);
+            }
+        }
+
+        None
+    }
+
+    /// Expand brace ranges like {1..10} or {a..z}
+    fn expand_brace_range(&self, content: &str) -> Option<Vec<String>> {
+        let parts: Vec<&str> = content.split("..").collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let start = parts[0].trim();
+        let end = parts[1].trim();
+
+        // Try numeric expansion
+        if let (Ok(start_num), Ok(end_num)) = (start.parse::<i32>(), end.parse::<i32>()) {
+            let mut result = Vec::new();
+            if start_num <= end_num {
+                for i in start_num..=end_num {
+                    result.push(i.to_string());
+                }
+            } else {
+                for i in (end_num..=start_num).rev() {
+                    result.push(i.to_string());
+                }
+            }
+            return Some(result);
+        }
+
+        // Try character expansion (single characters only)
+        if start.len() == 1 && end.len() == 1 {
+            let start_char = start.chars().next().unwrap();
+            let end_char = end.chars().next().unwrap();
+
+            // Only expand if both characters are in the same case (both lowercase or both uppercase)
+            let both_lowercase = start_char.is_ascii_lowercase() && end_char.is_ascii_lowercase();
+            let both_uppercase = start_char.is_ascii_uppercase() && end_char.is_ascii_uppercase();
+
+            if both_lowercase || both_uppercase {
+                let mut result = Vec::new();
+
+                if start_char <= end_char {
+                    for c in start_char..=end_char {
+                        result.push(c.to_string());
+                    }
+                } else {
+                    for c in (end_char..=start_char).rev() {
+                        result.push(c.to_string());
+                    }
+                }
+                return Some(result);
+            }
+        }
+
+        None
     }
 
     /// Check if a string contains glob patterns
@@ -5544,5 +5688,212 @@ mod tests {
                 None => std::env::remove_var("HOME"),
             }
         }
+    }
+
+    #[test]
+    fn test_brace_expansion_numeric_ranges() {
+        let interpreter = Interpreter::new();
+
+        // Basic numeric range
+        let result = interpreter.expand_brace_patterns("{1..5}");
+        assert_eq!(result, vec!["1", "2", "3", "4", "5"]);
+
+        // Reverse numeric range
+        let result = interpreter.expand_brace_patterns("{5..1}");
+        assert_eq!(result, vec!["5", "4", "3", "2", "1"]);
+
+        // Single number range
+        let result = interpreter.expand_brace_patterns("{3..3}");
+        assert_eq!(result, vec!["3"]);
+
+        // Negative numbers
+        let result = interpreter.expand_brace_patterns("{-2..2}");
+        assert_eq!(result, vec!["-2", "-1", "0", "1", "2"]);
+
+        // Large range (should work but be reasonable)
+        let result = interpreter.expand_brace_patterns("{1..10}");
+        assert_eq!(
+            result,
+            vec!["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+        );
+    }
+
+    #[test]
+    fn test_brace_expansion_character_ranges() {
+        let interpreter = Interpreter::new();
+
+        // Basic character range
+        let result = interpreter.expand_brace_patterns("{a..e}");
+        assert_eq!(result, vec!["a", "b", "c", "d", "e"]);
+
+        // Reverse character range
+        let result = interpreter.expand_brace_patterns("{e..a}");
+        assert_eq!(result, vec!["e", "d", "c", "b", "a"]);
+
+        // Single character range
+        let result = interpreter.expand_brace_patterns("{z..z}");
+        assert_eq!(result, vec!["z"]);
+
+        // Uppercase characters
+        let result = interpreter.expand_brace_patterns("{A..D}");
+        assert_eq!(result, vec!["A", "B", "C", "D"]);
+
+        // Mixed case (should not work - only single case ranges)
+        let result = interpreter.expand_brace_patterns("{a..Z}");
+        assert_eq!(result, vec!["{a..Z}"]);
+    }
+
+    #[test]
+    fn test_brace_expansion_comma_separated() {
+        let interpreter = Interpreter::new();
+
+        // Basic comma-separated list
+        let result = interpreter.expand_brace_patterns("{a,b,c}");
+        assert_eq!(result, vec!["a", "b", "c"]);
+
+        // Mixed types
+        let result = interpreter.expand_brace_patterns("{1,hello,world}");
+        assert_eq!(result, vec!["1", "hello", "world"]);
+
+        // With spaces (should be trimmed)
+        let result = interpreter.expand_brace_patterns("{a, b, c}");
+        assert_eq!(result, vec!["a", "b", "c"]);
+
+        // Single item
+        let result = interpreter.expand_brace_patterns("{single}");
+        assert_eq!(result, vec!["{single}"]);
+
+        // Empty items
+        let result = interpreter.expand_brace_patterns("{a,,c}");
+        assert_eq!(result, vec!["a", "", "c"]);
+    }
+
+    #[test]
+    fn test_brace_expansion_with_prefix_suffix() {
+        let interpreter = Interpreter::new();
+
+        // Prefix and suffix
+        let result = interpreter.expand_brace_patterns("file{1..3}.txt");
+        assert_eq!(result, vec!["file1.txt", "file2.txt", "file3.txt"]);
+
+        // Only prefix
+        let result = interpreter.expand_brace_patterns("prefix_{a,b,c}");
+        assert_eq!(result, vec!["prefix_a", "prefix_b", "prefix_c"]);
+
+        // Only suffix
+        let result = interpreter.expand_brace_patterns("{1,2,3}_suffix");
+        assert_eq!(result, vec!["1_suffix", "2_suffix", "3_suffix"]);
+
+        // Complex prefix and suffix
+        let result = interpreter.expand_brace_patterns("path/to/file{1..2}.backup.txt");
+        assert_eq!(
+            result,
+            vec!["path/to/file1.backup.txt", "path/to/file2.backup.txt"]
+        );
+    }
+
+    #[test]
+    fn test_brace_expansion_nested_and_multiple() {
+        let interpreter = Interpreter::new();
+
+        // Multiple brace expansions in one string
+        let result = interpreter.expand_brace_patterns("{a,b}{1,2}");
+        assert_eq!(result, vec!["a1", "a2", "b1", "b2"]);
+
+        // Multiple separate expansions
+        let args = vec!["{1..2}".to_string(), "{a,b}".to_string()];
+        let result = interpreter.expand_glob_patterns(&args);
+        assert_eq!(result, vec!["1", "2", "a", "b"]);
+
+        // Complex multiple expansions
+        let result = interpreter.expand_brace_patterns("file{1,2}.{txt,log}");
+        assert_eq!(
+            result,
+            vec!["file1.txt", "file1.log", "file2.txt", "file2.log"]
+        );
+    }
+
+    #[test]
+    fn test_brace_expansion_edge_cases() {
+        let interpreter = Interpreter::new();
+
+        // No braces
+        let result = interpreter.expand_brace_patterns("normal_string");
+        assert_eq!(result, vec!["normal_string"]);
+
+        // Unmatched braces
+        let result = interpreter.expand_brace_patterns("{unmatched");
+        assert_eq!(result, vec!["{unmatched"]);
+
+        let result = interpreter.expand_brace_patterns("unmatched}");
+        assert_eq!(result, vec!["unmatched}"]);
+
+        // Empty braces
+        let result = interpreter.expand_brace_patterns("{}");
+        assert_eq!(result, vec!["{}"]);
+
+        // Invalid range
+        let result = interpreter.expand_brace_patterns("{1..}");
+        assert_eq!(result, vec!["{1..}"]);
+
+        let result = interpreter.expand_brace_patterns("{..5}");
+        assert_eq!(result, vec!["{..5}"]);
+
+        // Non-range, non-comma content
+        let result = interpreter.expand_brace_patterns("{hello}");
+        assert_eq!(result, vec!["{hello}"]);
+
+        // Multiple dots
+        let result = interpreter.expand_brace_patterns("{1...5}");
+        assert_eq!(result, vec!["{1...5}"]);
+    }
+
+    #[test]
+    fn test_brace_expansion_integration_with_commands() {
+        let mut interpreter = Interpreter::new();
+
+        // Test with echo command
+        let result = interpreter.execute("echo {1..3}").unwrap();
+        assert_eq!(result, 0);
+
+        // Test with variable assignment (brace expansion doesn't happen in assignments)
+        let result = interpreter.execute("FILES=\"{a,b,c}\"").unwrap();
+        assert_eq!(result, 0);
+        assert_eq!(
+            interpreter.variables.get("FILES"),
+            Some(&"{a,b,c}".to_string())
+        );
+
+        // Test brace expansion with variable expansion
+        interpreter
+            .variables
+            .insert("PREFIX".to_string(), "file".to_string());
+        let expanded = interpreter.expand_brace_patterns("$PREFIX{1..2}.txt");
+        // This should not expand the variable here, as that happens in expand_variables
+        assert_eq!(expanded, vec!["$PREFIX1.txt", "$PREFIX2.txt"]);
+    }
+
+    #[test]
+    fn test_brace_expansion_with_glob_patterns() {
+        let interpreter = Interpreter::new();
+
+        // Brace expansion should happen before glob expansion
+        let args = vec!["{test,src}/*.rs".to_string()];
+        let result = interpreter.expand_glob_patterns(&args);
+
+        // This should expand to test/*.rs and src/*.rs, then glob each
+        // The exact result depends on what files exist, but it should not contain the original pattern
+        assert!(!result.contains(&"{test,src}/*.rs".to_string()));
+
+        // Should contain expanded patterns or their glob matches
+        let has_test_pattern = result
+            .iter()
+            .any(|s| s.contains("test") && s.contains(".rs"));
+        let has_src_pattern = result
+            .iter()
+            .any(|s| s.contains("src") && s.contains(".rs"));
+
+        // At least one should be true (depending on what files exist)
+        assert!(has_test_pattern || has_src_pattern || result.len() >= 2);
     }
 }
