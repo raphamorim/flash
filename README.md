@@ -35,8 +35,8 @@ Legends:
 | **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ✅  | |
 |                       | `case` / `esac`                                 | ✅          | ✅   | ✅  | |
 |                       | `for` loops                                     | ✅          | ✅   | ✅  | |
-|                       | `while`, `until` loops                          | ✅          | ✅   | ❌  | |
-|                       | `select` loop                                   | ❌          | ✅   | ❌  | |
+|                       | `while`, `until` loops                          | ✅          | ✅   | ✅  | |
+|                       | `select` loop                                   | ❌          | ✅   | ✅  | |
 |                       | `[[ ... ]]` test command                        | ❌          | ✅   | ✅  | Extended test |
 | **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | ✅  | |
 |                       | `function` keyword                              | ❌          | ✅   | ✅  | Bash-specific |
@@ -44,7 +44,7 @@ Legends:
 |                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | ❌  | |
 |                       | Here strings (`<<<`)                            | ❌          | ✅   | ❌  | |
 |                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | ❌  | |
-| **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | ❌  | |
+| **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | ✅  | |
 |                       | Job control commands (`fg`, `bg`, `jobs`)       | ✅          | ✅   | ✅  | May be interactive-only |
 |                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ❌  | |
 | **Arrays**            | Indexed arrays                                  | ❌          | ✅   | ✅  | `arr=(a b c)` |

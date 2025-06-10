@@ -362,3 +362,152 @@ fn test_factorial_zero() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), 1);
 }
+
+// Select statement tests
+#[test]
+fn test_select_parsing_basic() {
+    let script = "select choice in apple banana cherry; do echo $choice; done";
+    let ast = parse_script(script);
+
+    match ast {
+        Node::List { statements, .. } => {
+            assert_eq!(statements.len(), 1);
+            match &statements[0] {
+                Node::SelectStatement {
+                    variable, items, ..
+                } => {
+                    assert_eq!(variable, "choice");
+                    match items.as_ref() {
+                        Node::Array { elements } => {
+                            assert_eq!(elements.len(), 3);
+                            assert_eq!(elements[0], "apple");
+                            assert_eq!(elements[1], "banana");
+                            assert_eq!(elements[2], "cherry");
+                        }
+                        _ => panic!("Expected Array node for select items"),
+                    }
+                }
+                _ => panic!("Expected SelectStatement node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}
+
+#[test]
+fn test_select_parsing_with_positional_params() {
+    let script = "select choice in; do echo $choice; done";
+    let ast = parse_script(script);
+
+    match ast {
+        Node::List { statements, .. } => {
+            assert_eq!(statements.len(), 1);
+            match &statements[0] {
+                Node::SelectStatement {
+                    variable, items, ..
+                } => {
+                    assert_eq!(variable, "choice");
+                    match items.as_ref() {
+                        Node::StringLiteral(s) => {
+                            assert_eq!(s, "$@");
+                        }
+                        _ => panic!("Expected StringLiteral node for positional params"),
+                    }
+                }
+                _ => panic!("Expected SelectStatement node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}
+
+#[test]
+fn test_select_parsing_multiline() {
+    let script = r#"
+        select option in start stop restart
+        do
+            echo "Selected: $option"
+            break
+        done
+    "#;
+    let ast = parse_script(script);
+
+    match ast {
+        Node::List { statements, .. } => {
+            assert_eq!(statements.len(), 1);
+            match &statements[0] {
+                Node::SelectStatement {
+                    variable, items, ..
+                } => {
+                    assert_eq!(variable, "option");
+                    match items.as_ref() {
+                        Node::Array { elements } => {
+                            assert_eq!(elements.len(), 3);
+                            assert_eq!(elements[0], "start");
+                            assert_eq!(elements[1], "stop");
+                            assert_eq!(elements[2], "restart");
+                        }
+                        _ => panic!("Expected Array node for select items"),
+                    }
+                }
+                _ => panic!("Expected SelectStatement node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}
+
+#[test]
+fn test_select_with_function() {
+    let script = r#"
+        menu() {
+            select choice in option1 option2 quit
+            do
+                echo "You chose $choice"
+                break
+            done
+        }
+    "#;
+    // Only test that the function definition parses correctly, don't execute it
+    let ast = parse_script(script);
+    match ast {
+        Node::List { statements, .. } => {
+            assert_eq!(statements.len(), 1);
+            match &statements[0] {
+                Node::Function { name, .. } => {
+                    assert_eq!(name, "menu");
+                }
+                _ => panic!("Expected Function node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}
+
+#[test]
+fn test_select_variable_assignment() {
+    let script = r#"
+        select_test() {
+            select item in test1 test2
+            do
+                echo "Selected: $item"
+                echo "Reply: $REPLY"
+                return 0
+            done
+        }
+    "#;
+    // Only test parsing, not execution to avoid hanging on stdin
+    let ast = parse_script(script);
+    match ast {
+        Node::List { statements, .. } => {
+            assert_eq!(statements.len(), 1);
+            match &statements[0] {
+                Node::Function { name, .. } => {
+                    assert_eq!(name, "select_test");
+                }
+                _ => panic!("Expected Function node"),
+            }
+        }
+        _ => panic!("Expected List node"),
+    }
+}

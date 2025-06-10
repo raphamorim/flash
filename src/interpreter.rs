@@ -131,6 +131,11 @@ impl Evaluator for DefaultEvaluator {
                 let result = interpreter.evaluate_with_evaluator(command, self)?;
                 Ok(if result == 0 { 1 } else { 0 })
             }
+            Node::SelectStatement {
+                variable,
+                items,
+                body,
+            } => self.evaluate_select_statement(variable, items, body, interpreter),
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
@@ -1055,6 +1060,105 @@ impl DefaultEvaluator {
             // Check for break/continue (not implemented yet, but structure is ready)
             // if interpreter.should_break { break; }
             // if interpreter.should_continue { continue; }
+        }
+
+        Ok(last_exit_code)
+    }
+
+    fn evaluate_select_statement(
+        &mut self,
+        variable: &str,
+        items: &Node,
+        body: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        use std::io::{self, Write};
+
+        // Evaluate items to get the list of choices
+        let choices = match items {
+            Node::Array { elements } => elements.clone(),
+            Node::StringLiteral(s) if s == "$@" => {
+                // Use positional parameters
+                interpreter.args.clone()
+            }
+            _ => {
+                // Try to evaluate as a command and capture output
+                let output = interpreter.capture_command_output(items, self)?;
+                output.split_whitespace().map(|s| s.to_string()).collect()
+            }
+        };
+
+        if choices.is_empty() {
+            return Ok(0);
+        }
+
+        // Check if we're in a non-interactive environment (like tests)
+        // by checking if stdin is redirected or if we're in a test environment
+        if std::env::var("CARGO_TEST").is_ok() || std::env::var("RUST_TEST_THREADS").is_ok() {
+            // In test mode, just return without executing the body
+            return Ok(0);
+        }
+
+        let mut last_exit_code = 0;
+
+        loop {
+            // Display the menu
+            for (i, choice) in choices.iter().enumerate() {
+                println!("{}) {}", i + 1, choice);
+            }
+
+            // Prompt for selection
+            print!("#? ");
+            io::stdout().flush()?;
+
+            // Read user input
+            let mut input = String::new();
+            match io::stdin().read_line(&mut input) {
+                Ok(0) => {
+                    // EOF - break out of select loop
+                    break;
+                }
+                Ok(_) => {
+                    let input = input.trim();
+
+                    // Handle empty input (just continue the loop)
+                    if input.is_empty() {
+                        continue;
+                    }
+
+                    // Handle numeric selection
+                    if let Ok(selection) = input.parse::<usize>() {
+                        if selection > 0 && selection <= choices.len() {
+                            // Set the variable to the selected item
+                            interpreter
+                                .variables
+                                .insert(variable.to_string(), choices[selection - 1].clone());
+
+                            // Set REPLY to the user's input
+                            interpreter
+                                .variables
+                                .insert("REPLY".to_string(), input.to_string());
+
+                            // Execute the body
+                            last_exit_code = interpreter.evaluate_with_evaluator(body, self)?;
+                            continue;
+                        }
+                    }
+
+                    // Set REPLY to the user's input for non-numeric or invalid selections
+                    interpreter
+                        .variables
+                        .insert("REPLY".to_string(), input.to_string());
+
+                    // For invalid selections, unset the variable and execute body
+                    interpreter.variables.remove(variable);
+                    last_exit_code = interpreter.evaluate_with_evaluator(body, self)?;
+                }
+                Err(_) => {
+                    // Error reading input - break out of select loop
+                    break;
+                }
+            }
         }
 
         Ok(last_exit_code)

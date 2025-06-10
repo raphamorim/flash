@@ -122,6 +122,7 @@ impl Lexer {
             "continue" => TokenKind::Continue,
             "return" => TokenKind::Return,
             "export" => TokenKind::Export,
+            "select" => TokenKind::Select,
             _ => TokenKind::Word(word.clone()),
         };
 

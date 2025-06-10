@@ -59,6 +59,7 @@ pub enum TokenKind {
     DoubleRBracket, // ]] - end extended test
     History,        // ! - history expansion
     Complete,       // complete - tab completion builtin
+    Select,         // select - interactive menu selection
     EOF,
 }
 
@@ -1110,6 +1111,7 @@ impl Lexer {
             "return" => TokenKind::Return,
             "export" => TokenKind::Export,
             "complete" => TokenKind::Complete,
+            "select" => TokenKind::Select,
             _ => TokenKind::Word(word.clone()),
         };
 

@@ -108,6 +108,11 @@ pub enum Node {
     Negation {
         command: Box<Node>,
     },
+    SelectStatement {
+        variable: String,
+        items: Box<Node>,
+        body: Box<Node>,
+    },
 }
 
 /// Case pattern for case statements
@@ -286,6 +291,7 @@ impl Parser {
             TokenKind::For => Some(self.parse_for_loop()),
             TokenKind::While => Some(self.parse_while_loop()),
             TokenKind::Until => Some(self.parse_until_loop()),
+            TokenKind::Select => Some(self.parse_select_statement()),
             TokenKind::Elif => Some(self.parse_elif_branch()),
             TokenKind::Else => Some(self.parse_else_branch()),
             TokenKind::LParen => Some(self.parse_subshell()),
@@ -1044,6 +1050,90 @@ impl Parser {
         Node::UntilLoop {
             condition: Box::new(condition),
             body: Box::new(body),
+        }
+    }
+
+    // Parse select statement: select var in items; do body; done
+    fn parse_select_statement(&mut self) -> Node {
+        self.next_token(); // Skip "select"
+
+        // Parse variable name
+        let variable = if let TokenKind::Word(var_name) = &self.current_token.kind {
+            let var = var_name.clone();
+            self.next_token();
+            var
+        } else {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected variable name after 'select'".to_string()],
+                redirects: Vec::new(),
+            };
+        };
+
+        // Expect "in"
+        if self.current_token.kind != TokenKind::In {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'in' after select variable".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "in"
+
+        // Parse items until "do" or semicolon/newline
+        let items = self.parse_select_items();
+
+        // Skip semicolons and newlines
+        while self.current_token.kind == TokenKind::Semicolon
+            || self.current_token.kind == TokenKind::Newline
+        {
+            self.next_token();
+        }
+
+        // Expect "do"
+        if self.current_token.kind != TokenKind::Do {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'do' after select items".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "do"
+
+        // Parse body until "done"
+        let body = self.parse_until_token_kind(TokenKind::Done);
+
+        self.next_token(); // Skip "done"
+
+        Node::SelectStatement {
+            variable,
+            items: Box::new(items),
+            body: Box::new(body),
+        }
+    }
+
+    // Parse items for select statement
+    fn parse_select_items(&mut self) -> Node {
+        let mut items = Vec::new();
+
+        while self.current_token.kind != TokenKind::Do
+            && self.current_token.kind != TokenKind::Semicolon
+            && self.current_token.kind != TokenKind::Newline
+            && self.current_token.kind != TokenKind::EOF
+        {
+            if let TokenKind::Word(item) = &self.current_token.kind {
+                items.push(item.clone());
+                self.next_token();
+            } else {
+                break;
+            }
+        }
+
+        if items.is_empty() {
+            // If no items specified, default to positional parameters
+            Node::StringLiteral("$@".to_string())
+        } else {
+            Node::Array { elements: items }
         }
     }
 
