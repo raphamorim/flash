@@ -1859,6 +1859,201 @@ fn test_for_loop_with_variable_expansion() {
 }
 
 #[test]
+fn test_while_loop_basic() {
+    let binary_path = get_flash_binary_path();
+
+    // Test basic while loop with counter
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("i=1; while [ $i -le 3 ]; do echo $i; if [ $i = 1 ]; then i=2; elif [ $i = 2 ]; then i=3; else i=4; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1\n2\n3");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_while_loop_with_test_command() {
+    let binary_path = get_flash_binary_path();
+
+    // Test while loop with test command
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("count=0; while test $count -lt 2; do echo \"count: $count\"; if [ $count = 0 ]; then count=1; else count=2; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "count: 0\ncount: 1");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_while_loop_false_condition() {
+    let binary_path = get_flash_binary_path();
+
+    // Test while loop that never executes (false condition)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("while false; do echo \"should not print\"; done; echo \"done\"")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "done");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_while_loop_multiline() {
+    let binary_path = get_flash_binary_path();
+
+    // Test while loop with multiline syntax
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("x=1\nwhile [ $x -le 2 ]\ndo\n  echo \"iteration $x\"\n  if [ $x = 1 ]; then x=2; else x=3; fi\ndone")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "iteration 1\niteration 2");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_until_loop_basic() {
+    let binary_path = get_flash_binary_path();
+
+    // Test basic until loop with counter
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("i=1; until [ $i -gt 3 ]; do echo $i; if [ $i = 1 ]; then i=2; elif [ $i = 2 ]; then i=3; else i=4; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1\n2\n3");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_until_loop_with_test_command() {
+    let binary_path = get_flash_binary_path();
+
+    // Test until loop with test command
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("count=0; until test $count -ge 2; do echo \"count: $count\"; if [ $count = 0 ]; then count=1; else count=2; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "count: 0\ncount: 1");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_until_loop_true_condition() {
+    let binary_path = get_flash_binary_path();
+
+    // Test until loop that never executes (true condition)
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("until true; do echo \"should not print\"; done; echo \"done\"")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "done");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_until_loop_multiline() {
+    let binary_path = get_flash_binary_path();
+
+    // Test until loop with multiline syntax
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("x=1\nuntil [ $x -gt 2 ]\ndo\n  echo \"iteration $x\"\n  if [ $x = 1 ]; then x=2; else x=3; fi\ndone")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "iteration 1\niteration 2");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_while_until_loop_syntax_errors() {
+    let binary_path = get_flash_binary_path();
+
+    // Test while loop syntax error - missing do
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("while true; echo \"missing do\"; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stdout.contains("syntax error")
+            || stderr.contains("syntax error")
+            || !output.status.success()
+    );
+
+    // Test until loop syntax error - missing do
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("until false; echo \"missing do\"; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stdout.contains("syntax error")
+            || stderr.contains("syntax error")
+            || !output.status.success()
+    );
+}
+
+#[test]
+fn test_nested_while_loops() {
+    let binary_path = get_flash_binary_path();
+
+    // Test nested while loops
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("i=1; while [ $i -le 2 ]; do j=1; while [ $j -le 2 ]; do echo \"$i-$j\"; if [ $j = 1 ]; then j=2; else j=3; fi; done; if [ $i = 1 ]; then i=2; else i=3; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1-1\n1-2\n2-1\n2-2");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_while_until_mixed_loops() {
+    let binary_path = get_flash_binary_path();
+
+    // Test while loop inside until loop
+    let output = Command::new(&binary_path)
+        .arg("-c")
+        .arg("outer=1; until [ $outer -gt 2 ]; do inner=1; while [ $inner -le 2 ]; do echo \"$outer-$inner\"; if [ $inner = 1 ]; then inner=2; else inner=3; fi; done; if [ $outer = 1 ]; then outer=2; else outer=3; fi; done")
+        .output()
+        .expect("Failed to execute flash");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.trim(), "1-1\n1-2\n2-1\n2-2");
+    assert!(output.status.success());
+}
+
+#[test]
 fn test_case_statement_basic() {
     let binary_path = get_flash_binary_path();
 

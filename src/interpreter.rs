@@ -119,6 +119,12 @@ impl Evaluator for DefaultEvaluator {
                 iterable,
                 body,
             } => self.evaluate_for_loop(variable, iterable, body, interpreter),
+            Node::WhileLoop { condition, body } => {
+                self.evaluate_while_loop(condition, body, interpreter)
+            }
+            Node::UntilLoop { condition, body } => {
+                self.evaluate_until_loop(condition, body, interpreter)
+            }
             Node::Array { elements: _ } => Ok(0), // Arrays are used internally, return success
             Node::Negation { command } => {
                 // Logical negation - invert the exit code
@@ -1002,6 +1008,58 @@ impl DefaultEvaluator {
         Ok(last_exit_code)
     }
 
+    fn evaluate_while_loop(
+        &mut self,
+        condition: &Node,
+        body: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        let mut last_exit_code = 0;
+
+        // Continue while condition returns 0 (success)
+        loop {
+            let condition_result = interpreter.evaluate_with_evaluator(condition, self)?;
+            if condition_result != 0 {
+                break; // Exit when condition fails
+            }
+
+            // Execute the body
+            last_exit_code = interpreter.evaluate_with_evaluator(body, self)?;
+
+            // Check for break/continue (not implemented yet, but structure is ready)
+            // if interpreter.should_break { break; }
+            // if interpreter.should_continue { continue; }
+        }
+
+        Ok(last_exit_code)
+    }
+
+    fn evaluate_until_loop(
+        &mut self,
+        condition: &Node,
+        body: &Node,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        let mut last_exit_code = 0;
+
+        // Continue until condition returns 0 (success)
+        loop {
+            let condition_result = interpreter.evaluate_with_evaluator(condition, self)?;
+            if condition_result == 0 {
+                break; // Exit when condition succeeds
+            }
+
+            // Execute the body
+            last_exit_code = interpreter.evaluate_with_evaluator(body, self)?;
+
+            // Check for break/continue (not implemented yet, but structure is ready)
+            // if interpreter.should_break { break; }
+            // if interpreter.should_continue { continue; }
+        }
+
+        Ok(last_exit_code)
+    }
+
     fn evaluate_command_substitution(
         &mut self,
         command: &Node,
@@ -1047,9 +1105,20 @@ impl DefaultEvaluator {
             return Ok(0);
         }
 
+        // Remove any trailing ')' that might be left from parsing issues
+        let expr = expr.trim_end_matches(')');
+
         // Handle simple number
         if let Ok(num) = expr.parse::<i64>() {
             return Ok(num);
+        }
+
+        // Handle variable names (should be already expanded by expand_variables)
+        // If it's a single word that's not a number, treat it as 0 (unset variable)
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            // This should not happen if variables are properly expanded
+            // But if it does, treat as 0
+            return Ok(0);
         }
 
         // Handle basic binary operations
@@ -1057,8 +1126,8 @@ impl DefaultEvaluator {
 
         // Addition and subtraction (lowest precedence)
         if let Some(pos) = expr.rfind('+') {
-            let left = &expr[..pos].trim();
-            let right = &expr[pos + 1..].trim();
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
             return Ok(left_val + right_val);
@@ -1067,8 +1136,8 @@ impl DefaultEvaluator {
         if let Some(pos) = expr.rfind('-') {
             // Make sure it's not a negative number at the start
             if pos > 0 {
-                let left = &expr[..pos].trim();
-                let right = &expr[pos + 1..].trim();
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
                 let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
                 let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
                 return Ok(left_val - right_val);
@@ -1077,16 +1146,16 @@ impl DefaultEvaluator {
 
         // Multiplication, division, and modulo (higher precedence)
         if let Some(pos) = expr.rfind('*') {
-            let left = &expr[..pos].trim();
-            let right = &expr[pos + 1..].trim();
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
             return Ok(left_val * right_val);
         }
 
         if let Some(pos) = expr.rfind('/') {
-            let left = &expr[..pos].trim();
-            let right = &expr[pos + 1..].trim();
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
             if right_val == 0 {
@@ -1096,8 +1165,8 @@ impl DefaultEvaluator {
         }
 
         if let Some(pos) = expr.rfind('%') {
-            let left = &expr[..pos].trim();
-            let right = &expr[pos + 1..].trim();
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
             if right_val == 0 {

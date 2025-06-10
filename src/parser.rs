@@ -97,6 +97,14 @@ pub enum Node {
         iterable: Box<Node>,
         body: Box<Node>,
     },
+    WhileLoop {
+        condition: Box<Node>,
+        body: Box<Node>,
+    },
+    UntilLoop {
+        condition: Box<Node>,
+        body: Box<Node>,
+    },
     Negation {
         command: Box<Node>,
     },
@@ -276,6 +284,8 @@ impl Parser {
             TokenKind::If => Some(self.parse_if_statement()),
             TokenKind::Case => Some(self.parse_case_statement()),
             TokenKind::For => Some(self.parse_for_loop()),
+            TokenKind::While => Some(self.parse_while_loop()),
+            TokenKind::Until => Some(self.parse_until_loop()),
             TokenKind::Elif => Some(self.parse_elif_branch()),
             TokenKind::Else => Some(self.parse_else_branch()),
             TokenKind::LParen => Some(self.parse_subshell()),
@@ -981,6 +991,62 @@ impl Parser {
         None
     }
 
+    // Parse while loop: while condition; do body; done
+    fn parse_while_loop(&mut self) -> Node {
+        self.next_token(); // Skip "while"
+
+        // Parse condition until "do"
+        let condition = self.parse_condition_until_token_kind(TokenKind::Do);
+
+        // Expect "do"
+        if self.current_token.kind != TokenKind::Do {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'do' after while condition".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "do"
+
+        // Parse body until "done"
+        let body = self.parse_until_token_kind(TokenKind::Done);
+
+        self.next_token(); // Skip "done"
+
+        Node::WhileLoop {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        }
+    }
+
+    // Parse until loop: until condition; do body; done
+    fn parse_until_loop(&mut self) -> Node {
+        self.next_token(); // Skip "until"
+
+        // Parse condition until "do"
+        let condition = self.parse_condition_until_token_kind(TokenKind::Do);
+
+        // Expect "do"
+        if self.current_token.kind != TokenKind::Do {
+            return Node::Command {
+                name: "echo".to_string(),
+                args: vec!["syntax error: expected 'do' after until condition".to_string()],
+                redirects: Vec::new(),
+            };
+        }
+        self.next_token(); // Skip "do"
+
+        // Parse body until "done"
+        let body = self.parse_until_token_kind(TokenKind::Done);
+
+        self.next_token(); // Skip "done"
+
+        Node::UntilLoop {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        }
+    }
+
     // method to parse a single command condition until a specific token kind is encountered
     fn parse_condition_until_token_kind(&mut self, stop_at: TokenKind) -> Node {
         // Parse a single command as the condition
@@ -1426,6 +1492,54 @@ impl Parser {
                     args.push(word.clone());
                     self.next_token();
                 }
+                TokenKind::ArithSubst => {
+                    // Handle arithmetic expansion like $((expr))
+                    let arith_expansion = self.parse_arithmetic_expansion();
+                    if let Node::ArithmeticExpansion { expression } = arith_expansion {
+                        args.push(format!("$(({}))", expression));
+                    }
+                }
+                TokenKind::CmdSubst => {
+                    // Handle command substitution like $(...)
+                    let cmd_subst = self.parse_command_substitution();
+                    if let Node::CommandSubstitution { command } = &cmd_subst {
+                        if let Node::Command {
+                            name,
+                            args: cmd_args,
+                            redirects,
+                        } = command.as_ref()
+                        {
+                            if redirects.is_empty() && cmd_args.is_empty() {
+                                args.push(format!("$({})", name));
+                            } else if redirects.is_empty() {
+                                let mut cmd_str = name.clone();
+                                for arg in cmd_args {
+                                    cmd_str.push(' ');
+                                    cmd_str.push_str(arg);
+                                }
+                                args.push(format!("$({})", cmd_str));
+                            } else {
+                                args.push("$(...)".to_string());
+                            }
+                        } else {
+                            args.push("$(...)".to_string());
+                        }
+                    }
+                }
+                TokenKind::Quote => {
+                    // Handle double quoted strings
+                    let quoted = self.parse_quoted_string(TokenKind::Quote);
+                    if let Node::StringLiteral(s) = quoted {
+                        args.push(s);
+                    }
+                }
+                TokenKind::SingleQuote => {
+                    // Handle single quoted strings
+                    let quoted = self.parse_quoted_string(TokenKind::SingleQuote);
+                    if let Node::SingleQuotedString(s) = quoted {
+                        args.push(s);
+                    }
+                }
                 // Handle keywords as regular arguments when they appear in command arguments
                 TokenKind::Continue => {
                     args.push("continue".to_string());
@@ -1502,50 +1616,6 @@ impl Parser {
 
                     args.push(pattern_str);
                 }
-                TokenKind::Quote => {
-                    // Start of a double quoted string
-                    self.next_token(); // Skip double quote symbol
-
-                    let mut quoted_string = String::new();
-
-                    // Collect all tokens until the closing quote
-                    while self.current_token.kind != TokenKind::Quote
-                        && self.current_token.kind != TokenKind::EOF
-                    {
-                        if let TokenKind::Word(word) = &self.current_token.kind {
-                            quoted_string.push_str(word);
-                        }
-                        self.next_token();
-                    }
-
-                    if let TokenKind::Quote = self.current_token.kind {
-                        self.next_token(); // Skip closing quote
-                    }
-
-                    args.push(quoted_string);
-                }
-                TokenKind::SingleQuote => {
-                    // Start of a single quoted string
-                    self.next_token(); // Skip single quote symbol
-
-                    let mut quoted_string = String::new();
-
-                    // Collect all tokens until the closing single quote
-                    while self.current_token.kind != TokenKind::SingleQuote
-                        && self.current_token.kind != TokenKind::EOF
-                    {
-                        if let TokenKind::Word(word) = &self.current_token.kind {
-                            quoted_string.push_str(word);
-                        }
-                        self.next_token();
-                    }
-
-                    if let TokenKind::SingleQuote = self.current_token.kind {
-                        self.next_token(); // Skip closing single quote
-                    }
-
-                    args.push(quoted_string);
-                }
                 TokenKind::Less | TokenKind::Great | TokenKind::DGreat => {
                     let redirect = self.parse_redirect();
                     redirects.push(redirect);
@@ -1612,42 +1682,6 @@ impl Parser {
                     }
 
                     args.push(var_ref);
-                }
-                TokenKind::CmdSubst => {
-                    // Handle command substitution like $(...)
-                    let _start_pos = self.current_token.position;
-                    let cmd_subst = self.parse_command_substitution();
-
-                    // For simple cases, try to reconstruct the original syntax
-                    if let Node::CommandSubstitution { command } = &cmd_subst {
-                        if let Node::Command {
-                            name,
-                            args: cmd_args,
-                            redirects,
-                        } = command.as_ref()
-                        {
-                            if redirects.is_empty() && cmd_args.is_empty() {
-                                // Simple command like $(date)
-                                args.push(format!("$({})", name));
-                            } else if redirects.is_empty() {
-                                // Command with args like $(echo hello)
-                                let mut cmd_str = name.clone();
-                                for arg in cmd_args {
-                                    cmd_str.push(' ');
-                                    cmd_str.push_str(arg);
-                                }
-                                args.push(format!("$({})", cmd_str));
-                            } else {
-                                // Complex command, use placeholder for now
-                                args.push("$(...)".to_string());
-                            }
-                        } else {
-                            // Complex command substitution, use placeholder
-                            args.push("$(...)".to_string());
-                        }
-                    } else {
-                        args.push("$(...)".to_string());
-                    }
                 }
                 TokenKind::Assignment => {
                     // In command context, treat = as a regular argument
@@ -1797,38 +1831,52 @@ impl Parser {
                 TokenKind::LParen => {
                     paren_count += 1;
                     expression.push('(');
+                    self.next_token();
                 }
                 TokenKind::RParen => {
                     paren_count -= 1;
-                    if paren_count > 0 {
+                    // Only add ')' to expression if it's not part of the closing '))'
+                    if paren_count > 1 {
                         expression.push(')');
                     }
+                    self.next_token();
                 }
                 TokenKind::Word(word) => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
                     expression.push_str(word);
+                    self.next_token();
                 }
                 TokenKind::Dollar => {
                     expression.push('$');
+                    self.next_token();
                 }
                 TokenKind::Assignment => {
                     expression.push('=');
+                    self.next_token();
                 }
                 _ => {
-                    // Add the token value as-is
-                    expression.push_str(&self.current_token.value);
+                    // For unhandled tokens, add their value but be careful about parentheses
+                    let token_value = &self.current_token.value;
+                    if token_value != ")" {
+                        // Don't add stray closing parentheses
+                        if !expression.is_empty()
+                            && !expression.ends_with(' ')
+                            && !token_value.is_empty()
+                        {
+                            expression.push(' ');
+                        }
+                        expression.push_str(token_value);
+                    }
+                    self.next_token();
                 }
             }
-
-            if paren_count > 0 {
-                self.next_token();
-            }
         }
 
-        if paren_count == 0 {
-            self.next_token(); // Skip the final '))'
+        Node::ArithmeticExpansion {
+            expression: expression.trim().to_string(),
         }
-
-        Node::ArithmeticExpansion { expression }
     }
 
     // Enhanced version to handle multiple variable assignments
@@ -3485,15 +3533,121 @@ done
 
     #[test]
     fn test_while_loop() {
-        let input = r#"
-while read line; do
-    echo "Line: $line"
-done < input.txt
-"#;
+        let input = "while [ $i -lt 5 ]; do echo $i; done";
+        let result = parse_test(input);
 
-        // This would require additional parsing logic not present in the current code
-        // Just verify it doesn't panic
-        let _result = parse_test(input);
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::WhileLoop { condition, body } => {
+                        // Verify condition is parsed
+                        match condition.as_ref() {
+                            Node::Command { name, args, .. } => {
+                                assert_eq!(name, "[");
+                                assert_eq!(args, &["$i", "-lt", "5", "]"]);
+                            }
+                            _ => panic!("Expected Command node for condition"),
+                        }
+                        // Verify body is parsed
+                        match body.as_ref() {
+                            Node::List { statements, .. } => {
+                                assert_eq!(statements.len(), 1);
+                                match &statements[0] {
+                                    Node::Command { name, args, .. } => {
+                                        assert_eq!(name, "echo");
+                                        assert_eq!(args, &["$i"]);
+                                    }
+                                    _ => panic!("Expected Command node in body"),
+                                }
+                            }
+                            _ => panic!("Expected List node for body"),
+                        }
+                    }
+                    _ => panic!("Expected WhileLoop node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_until_loop() {
+        let input = "until [ $i -ge 5 ]; do echo $i; done";
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::UntilLoop { condition, body } => {
+                        // Verify condition is parsed
+                        match condition.as_ref() {
+                            Node::Command { name, args, .. } => {
+                                assert_eq!(name, "[");
+                                assert_eq!(args, &["$i", "-ge", "5", "]"]);
+                            }
+                            _ => panic!("Expected Command node for condition"),
+                        }
+                        // Verify body is parsed
+                        match body.as_ref() {
+                            Node::List { statements, .. } => {
+                                assert_eq!(statements.len(), 1);
+                                match &statements[0] {
+                                    Node::Command { name, args, .. } => {
+                                        assert_eq!(name, "echo");
+                                        assert_eq!(args, &["$i"]);
+                                    }
+                                    _ => panic!("Expected Command node in body"),
+                                }
+                            }
+                            _ => panic!("Expected List node for body"),
+                        }
+                    }
+                    _ => panic!("Expected UntilLoop node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    #[test]
+    fn test_while_loop_multiline() {
+        let input = r#"
+while [ $count -lt 3 ]
+do
+    echo "Count: $count"
+    count=$((count + 1))
+done
+"#;
+        let result = parse_test(input);
+
+        match result {
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::WhileLoop { condition, body } => {
+                        // Verify condition
+                        match condition.as_ref() {
+                            Node::Command { name, args, .. } => {
+                                assert_eq!(name, "[");
+                                assert_eq!(args, &["$count", "-lt", "3", "]"]);
+                            }
+                            _ => panic!("Expected Command node for condition"),
+                        }
+                        // Verify body has multiple statements
+                        match body.as_ref() {
+                            Node::List { statements, .. } => {
+                                assert_eq!(statements.len(), 2);
+                            }
+                            _ => panic!("Expected List node for body"),
+                        }
+                    }
+                    _ => panic!("Expected WhileLoop node"),
+                }
+            }
+            _ => panic!("Expected List node"),
+        }
     }
 
     #[test]
