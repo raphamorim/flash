@@ -1,2 +1,0 @@
-*.wasm filter=lfs diff=lfs merge=lfs -text
-docs/pkg/*.wasm filter=lfs diff=lfs merge=lfs -text
