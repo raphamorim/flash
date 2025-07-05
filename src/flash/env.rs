@@ -159,7 +159,7 @@ impl Environment {
             std::env::var("CARGO_CFG_TARGET_VENDOR").unwrap_or_else(|_| "unknown".to_string());
         let target_os =
             std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
-        let machtype = format!("{}-{}-{}", target_arch, target_vendor, target_os);
+        let machtype = format!("{target_arch}-{target_vendor}-{target_os}");
 
         // Shell identification
         self.set_exported("SHELL", "flash".to_string());
@@ -188,7 +188,7 @@ impl Environment {
         // History settings
         if let Some(home) = self.get("HOME") {
             if !self.has("HISTFILE") {
-                self.set("HISTFILE", format!("{}/.flash_history", home));
+                self.set("HISTFILE", format!("{home}/.flash_history"));
             }
         }
         if !self.has("HISTSIZE") {
@@ -208,7 +208,7 @@ impl Environment {
         {
             if let Some(path) = self.get("PATH") {
                 if !path.contains("/opt/homebrew/bin") {
-                    self.set_exported("PATH", format!("/opt/homebrew/bin:{}", path));
+                    self.set_exported("PATH", format!("/opt/homebrew/bin:{path}"));
                 }
             }
         }

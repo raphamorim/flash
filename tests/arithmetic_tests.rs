@@ -43,7 +43,7 @@ fn test_arithmetic_expansion_operations() {
 
     for (command, _expected) in test_cases {
         let result = interpreter.execute(command);
-        assert!(result.is_ok(), "Failed to execute: {}", command);
+        assert!(result.is_ok(), "Failed to execute: {command}");
     }
 }
 
@@ -69,7 +69,7 @@ fn test_arithmetic_expansion_with_variables() {
 
     for command in test_cases {
         let result = interpreter.execute(command);
-        assert!(result.is_ok(), "Failed to execute: {}", command);
+        assert!(result.is_ok(), "Failed to execute: {command}");
     }
 }
 
@@ -86,7 +86,7 @@ fn test_arithmetic_expansion_parentheses() {
 
     for command in test_cases {
         let result = interpreter.execute(command);
-        assert!(result.is_ok(), "Failed to execute: {}", command);
+        assert!(result.is_ok(), "Failed to execute: {command}");
     }
 }
 
@@ -127,8 +127,7 @@ fn test_arithmetic_command_operations() {
         assert_eq!(
             result.unwrap(),
             expected_exit_code,
-            "Failed for command: {}",
-            command
+            "Failed for command: {command}"
         );
     }
 }
@@ -157,8 +156,7 @@ fn test_arithmetic_command_with_variables() {
         assert_eq!(
             result.unwrap(),
             expected_exit_code,
-            "Failed for command: {}",
-            command
+            "Failed for command: {command}"
         );
     }
 }
@@ -183,8 +181,7 @@ fn test_arithmetic_command_logical_operators() {
         assert_eq!(
             result.unwrap(),
             expected_exit_code,
-            "Failed for command: {}",
-            command
+            "Failed for command: {command}"
         );
     }
 }
@@ -260,7 +257,7 @@ fn test_arithmetic_complex_expressions() {
 
     for command in test_cases {
         let result = interpreter.execute(command);
-        assert!(result.is_ok(), "Failed to execute: {}", command);
+        assert!(result.is_ok(), "Failed to execute: {command}");
     }
 }
 
@@ -382,7 +379,7 @@ fn test_arithmetic_whitespace_handling() {
 
     for command in test_cases {
         let result = interpreter.execute(command);
-        assert!(result.is_ok(), "Failed to execute: {}", command);
+        assert!(result.is_ok(), "Failed to execute: {command}");
     }
 }
 #[test]
@@ -400,19 +397,19 @@ fn debug_arithmetic() {
     // Test each case individually
     println!("Testing (( $x > $y ))");
     let result = interpreter.execute("(( $x > $y ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing (( $y > $x ))");
     let result = interpreter.execute("(( $y > $x ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing (( $x == 10 ))");
     let result = interpreter.execute("(( $x == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing (( $y == 10 ))");
     let result = interpreter.execute("(( $y == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 }
 
 #[test]
@@ -427,17 +424,17 @@ fn test_arithmetic_command_direct() {
     // Test the expression that's failing
     println!("Testing expression: '5 == 10'");
     let result = interpreter.execute("(( 5 == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // Should be false (exit code 1)
 
     println!("Testing expression: '$y == 10'");
     let result = interpreter.execute("(( $y == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // Should be false (exit code 1)
 
     println!("Testing expression: '5 == 5'");
     let result = interpreter.execute("(( 5 == 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (exit code 0)
 }
 
@@ -448,23 +445,23 @@ fn test_arithmetic_simple_cases() {
     // Test simple arithmetic without comparison
     println!("Testing: (( 5 ))");
     let result = interpreter.execute("(( 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Non-zero should be true (exit code 0)
 
     println!("Testing: (( 0 ))");
     let result = interpreter.execute("(( 0 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // Zero should be false (exit code 1)
 
     // Test simple comparison
     println!("Testing: (( 5 > 3 ))");
     let result = interpreter.execute("(( 5 > 3 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // True
 
     println!("Testing: (( 3 > 5 ))");
     let result = interpreter.execute("(( 3 > 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // False
 }
 
@@ -475,17 +472,17 @@ fn test_equality_operator() {
     // Test equality operator
     println!("Testing: (( 5 == 5 ))");
     let result = interpreter.execute("(( 5 == 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (exit code 0)
 
     println!("Testing: (( 5 == 10 ))");
     let result = interpreter.execute("(( 5 == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // Should be false (exit code 1)
 
     println!("Testing: (( 10 == 10 ))");
     let result = interpreter.execute("(( 10 == 10 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (exit code 0)
 }
 
@@ -496,19 +493,19 @@ fn test_nested_step_by_step() {
     // Test simple arithmetic expansion
     println!("Testing: echo $((5 + 3))");
     let result = interpreter.execute("echo $((5 + 3))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert!(result.is_ok());
 
     // Test simple arithmetic command
     println!("Testing: (( 8 > 7 ))");
     let result = interpreter.execute("(( 8 > 7 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true
 
     // Test the problematic nested case
     println!("Testing: (( $((5 + 3)) > 7 ))");
     let result = interpreter.execute("(( $((5 + 3)) > 7 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true
 }
 
@@ -518,17 +515,17 @@ fn test_gte_operator() {
 
     println!("Testing: (( 5 >= 5 ))");
     let result = interpreter.execute("(( 5 >= 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true
 
     println!("Testing: (( 3 >= 5 ))");
     let result = interpreter.execute("(( 3 >= 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 1); // Should be false
 
     println!("Testing: (( 7 >= 5 ))");
     let result = interpreter.execute("(( 7 >= 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true
 }
 
@@ -539,7 +536,7 @@ fn test_complex_nested_arithmetic() {
     // Test multiple nested arithmetic expressions
     println!("Testing: (( $((2 * 3)) + $((4 + 1)) == 11 ))");
     let result = interpreter.execute("(( $((2 * 3)) + $((4 + 1)) == 11 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (6 + 5 == 11)
 
     // Test nested arithmetic with variables
@@ -552,13 +549,13 @@ fn test_complex_nested_arithmetic() {
 
     println!("Testing: (( $((a * 2)) > $((b + 1)) ))");
     let result = interpreter.execute("(( $((a * 2)) > $((b + 1)) ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (6 > 5)
 
     // Test deeply nested arithmetic
     println!("Testing: (( $((1 + $((2 * 3)))) == 7 ))");
     let result = interpreter.execute("(( $((1 + $((2 * 3)))) == 7 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
     assert_eq!(result.unwrap(), 0); // Should be true (1 + 6 == 7)
 }
 
@@ -576,19 +573,19 @@ fn debug_nested_with_variables() {
     // Test the individual parts
     println!("Testing: echo $((a * 2))");
     let result = interpreter.execute("echo $((a * 2))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing: echo $((b + 1))");
     let result = interpreter.execute("echo $((b + 1))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing: (( 6 > 5 ))");
     let result = interpreter.execute("(( 6 > 5 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     println!("Testing: (( $((a * 2)) > $((b + 1)) ))");
     let result = interpreter.execute("(( $((a * 2)) > $((b + 1)) ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 }
 
 #[test]
@@ -598,25 +595,25 @@ fn debug_deeply_nested() {
     // Test the innermost expression first
     println!("Testing: echo $((2 * 3))");
     let result = interpreter.execute("echo $((2 * 3))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     // Test the outer expression with a literal value
     println!("Testing: echo $((1 + 6))");
     let result = interpreter.execute("echo $((1 + 6))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     // Test the nested expression
     println!("Testing: echo $((1 + $((2 * 3))))");
     let result = interpreter.execute("echo $((1 + $((2 * 3))))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     // Test in arithmetic command
     println!("Testing: (( 7 == 7 ))");
     let result = interpreter.execute("(( 7 == 7 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 
     // Test the full nested arithmetic command
     println!("Testing: (( $((1 + $((2 * 3)))) == 7 ))");
     let result = interpreter.execute("(( $((1 + $((2 * 3)))) == 7 ))");
-    println!("Result: {:?}", result);
+    println!("Result: {result:?}");
 }

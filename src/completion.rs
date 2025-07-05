@@ -241,15 +241,15 @@ impl CompletionSystem {
                             if dir_path.starts_with(&home) {
                                 let relative = &dir_path[home.len()..];
                                 if relative.is_empty() {
-                                    format!("~/{}", name)
+                                    format!("~/{name}")
                                 } else {
-                                    format!("~{}/{}", relative, name)
+                                    format!("~{relative}/{name}")
                                 }
                             } else {
-                                format!("{}/{}", dir_path, name)
+                                format!("{dir_path}/{name}")
                             }
                         } else {
-                            format!("{}/{}", dir_path, name)
+                            format!("{dir_path}/{name}")
                         };
 
                         // Add trailing slash for directories
@@ -312,22 +312,22 @@ impl CompletionSystem {
 
                     if name.starts_with(&file_prefix) {
                         let completion = if dir_path == "." {
-                            format!("{}/", name)
+                            format!("{name}/")
                         } else if prefix.starts_with('~') {
                             // Preserve tilde in completion
                             let home = env::var("HOME").unwrap_or_default();
                             if dir_path.starts_with(&home) {
                                 let relative = &dir_path[home.len()..];
                                 if relative.is_empty() {
-                                    format!("~/{}/", name)
+                                    format!("~/{name}/")
                                 } else {
-                                    format!("~{}/{}/", relative, name)
+                                    format!("~{relative}/{name}/")
                                 }
                             } else {
-                                format!("{}/{}/", dir_path, name)
+                                format!("{dir_path}/{name}/")
                             }
                         } else {
-                            format!("{}/{}/", dir_path, name)
+                            format!("{dir_path}/{name}/")
                         };
 
                         completions.push(completion);
@@ -373,14 +373,14 @@ impl CompletionSystem {
 
         for var in &common_vars {
             if var.starts_with(prefix) {
-                completions.push(format!("${}", var));
+                completions.push(format!("${var}"));
             }
         }
 
         // Environment variables
         for (key, _) in env::vars() {
             if key.starts_with(prefix) {
-                completions.push(format!("${}", key));
+                completions.push(format!("${key}"));
             }
         }
 
@@ -434,7 +434,7 @@ impl CompletionSystem {
 
         // Try to read ~/.ssh/known_hosts
         if let Ok(home) = env::var("HOME") {
-            let known_hosts_path = format!("{}/.ssh/known_hosts", home);
+            let known_hosts_path = format!("{home}/.ssh/known_hosts");
             if let Ok(known_hosts_content) = fs::read_to_string(known_hosts_path) {
                 for line in known_hosts_content.lines() {
                     let line = line.trim();
@@ -589,7 +589,7 @@ impl CompletionSystem {
                 for section in &[
                     "man1", "man2", "man3", "man4", "man5", "man6", "man7", "man8",
                 ] {
-                    let section_path = format!("{}/{}", path, section);
+                    let section_path = format!("{path}/{section}");
                     if let Ok(entries) = fs::read_dir(section_path) {
                         for entry in entries.flatten() {
                             if let Some(name) = entry.file_name().to_str() {
@@ -776,8 +776,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.ends_with('/'),
-                "Directory completion '{}' should end with '/'",
-                completion
+                "Directory completion '{completion}' should end with '/'"
             );
         }
     }
@@ -796,8 +795,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.starts_with('$'),
-                "Variable completion '{}' should start with $",
-                completion
+                "Variable completion '{completion}' should start with $"
             );
         }
     }
@@ -920,8 +918,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.ends_with('/'),
-                "CD completion '{}' should be a directory",
-                completion
+                "CD completion '{completion}' should be a directory"
             );
         }
     }
@@ -971,7 +968,7 @@ mod tests {
         };
 
         // Should be able to debug print without crashing
-        let debug_str = format!("{:?}", context);
+        let debug_str = format!("{context:?}");
         assert!(debug_str.contains("test line"));
     }
 
@@ -1033,8 +1030,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.starts_with('r'),
-                "User completion '{}' should start with 'r'",
-                completion
+                "User completion '{completion}' should start with 'r'"
             );
         }
     }
@@ -1056,8 +1052,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.starts_with("local"),
-                "Hostname completion '{}' should start with 'local'",
-                completion
+                "Hostname completion '{completion}' should start with 'local'"
             );
         }
     }
@@ -1093,8 +1088,7 @@ mod tests {
         for completion in &completions {
             assert!(
                 completion.starts_with("src") || completion == "src/",
-                "File completion '{}' should start with 'src'",
-                completion
+                "File completion '{completion}' should start with 'src'"
             );
         }
     }
@@ -1114,8 +1108,7 @@ mod tests {
             if !completion.is_empty() {
                 assert!(
                     completion.starts_with("~/"),
-                    "Tilde completion '{}' should start with '~/'",
-                    completion
+                    "Tilde completion '{completion}' should start with '~/'"
                 );
             }
         }

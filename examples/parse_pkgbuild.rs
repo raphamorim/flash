@@ -66,5 +66,5 @@ install -Dm0644 \"docs/static/assets/${pkgname}-logo.svg\" \"$pkgdir/usr/share/i
     // Parse the entire script
     let ast = parser.parse_script();
 
-    println!("{:#?}", ast);
+    println!("{ast:#?}");
 }

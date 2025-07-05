@@ -35,7 +35,7 @@ fn main() -> io::Result<()> {
             match interpreter.execute(&input) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
@@ -52,7 +52,7 @@ fn main() -> io::Result<()> {
             match interpreter.execute(command) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
@@ -68,12 +68,12 @@ fn main() -> io::Result<()> {
                 Ok(script_content) => match interpreter.execute(&script_content) {
                     Ok(exit_code) => std::process::exit(exit_code),
                     Err(e) => {
-                        eprintln!("Error executing script {}: {}", script_path, e);
+                        eprintln!("Error executing script {script_path}: {e}");
                         std::process::exit(1);
                     }
                 },
                 Err(e) => {
-                    eprintln!("Error reading script {}: {}", script_path, e);
+                    eprintln!("Error reading script {script_path}: {e}");
                     std::process::exit(1);
                 }
             }

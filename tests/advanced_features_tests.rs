@@ -25,7 +25,7 @@ fn test_parameter_expansion_parsing() {
     let mut evaluator = DefaultEvaluator;
     let result = evaluator.evaluate(&ast, &mut interpreter);
     if let Err(e) = &result {
-        println!("Error in test_parameter_expansion_parsing: {:?}", e);
+        println!("Error in test_parameter_expansion_parsing: {e:?}");
     }
     assert!(result.is_ok());
 }
@@ -43,7 +43,7 @@ fn test_parameter_expansion_default() {
     let mut evaluator = DefaultEvaluator;
     let result = evaluator.evaluate(&ast, &mut interpreter);
     if let Err(e) = &result {
-        println!("Error in test_parameter_expansion_default: {:?}", e);
+        println!("Error in test_parameter_expansion_default: {e:?}");
     }
     assert!(result.is_ok());
 }

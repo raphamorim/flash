@@ -352,7 +352,7 @@ fn test_arith_command_token() {
     let mut lexer = Lexer::new("((");
     let token = lexer.next_token();
 
-    println!("Token: {:?}", token);
+    println!("Token: {token:?}");
 
     // Check if it's an ArithCommand token
     match token.kind {
@@ -375,7 +375,7 @@ fn test_arith_command_full() {
     let mut tokens = Vec::new();
     loop {
         let token = lexer.next_token();
-        println!("{:?}", token);
+        println!("{token:?}");
 
         if token.kind == TokenKind::EOF {
             tokens.push(token);
@@ -396,7 +396,7 @@ fn test_gte_tokens() {
     println!("All tokens:");
     loop {
         let token = lexer.next_token();
-        println!("{:?}", token);
+        println!("{token:?}");
 
         if token.kind == TokenKind::EOF {
             break;
@@ -411,7 +411,7 @@ fn test_nested_arithmetic_tokens() {
     println!("All tokens for nested arithmetic:");
     loop {
         let token = lexer.next_token();
-        println!("{:?}", token);
+        println!("{token:?}");
 
         if token.kind == TokenKind::EOF {
             break;
@@ -426,7 +426,7 @@ fn test_deeply_nested_tokens() {
     println!("All tokens for deeply nested:");
     loop {
         let token = lexer.next_token();
-        println!("{:?}", token);
+        println!("{token:?}");
 
         if token.kind == TokenKind::EOF {
             break;

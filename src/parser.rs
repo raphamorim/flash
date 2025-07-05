@@ -476,7 +476,7 @@ impl Parser {
                     // For arithmetic expansion in concatenated context, preserve the syntax
                     let arith_node = self.parse_arithmetic_expansion();
                     if let Node::ArithmeticExpansion { expression } = arith_node {
-                        result.push_str(&format!("$(({}))", expression));
+                        result.push_str(&format!("$(({expression}))"));
                     }
                 }
                 TokenKind::Dollar => {
@@ -1639,7 +1639,7 @@ impl Parser {
                     // Handle arithmetic expansion like $((expr))
                     let arith_expansion = self.parse_arithmetic_expansion();
                     if let Node::ArithmeticExpansion { expression } = arith_expansion {
-                        args.push(format!("$(({}))", expression));
+                        args.push(format!("$(({expression}))"));
                     }
                 }
                 TokenKind::CmdSubst => {
@@ -1653,14 +1653,14 @@ impl Parser {
                         } = command.as_ref()
                         {
                             if redirects.is_empty() && cmd_args.is_empty() {
-                                args.push(format!("$({})", name));
+                                args.push(format!("$({name})"));
                             } else if redirects.is_empty() {
                                 let mut cmd_str = name.clone();
                                 for arg in cmd_args {
                                     cmd_str.push(' ');
                                     cmd_str.push_str(arg);
                                 }
-                                args.push(format!("$({})", cmd_str));
+                                args.push(format!("$({cmd_str})"));
                             } else {
                                 args.push("$(...)".to_string());
                             }
@@ -1752,7 +1752,7 @@ impl Parser {
                             suffix,
                         } => {
                             let patterns_joined = patterns.join("|");
-                            format!("{}({}){}", operator, patterns_joined, suffix)
+                            format!("{operator}({patterns_joined}){suffix}")
                         }
                         _ => String::new(),
                     };
@@ -3387,7 +3387,7 @@ mod parser_tests {
                                     assert_eq!(name, "echo");
                                     assert_eq!(args, &[*expected]);
                                 }
-                                _ => panic!("Expected Command node for echo {}", expected),
+                                _ => panic!("Expected Command node for echo {expected}"),
                             }
                         }
                     }
@@ -4729,7 +4729,7 @@ fi
                     assert_eq!(args[2], "test");
                     assert_eq!(args[3], "]");
                 } else {
-                    panic!("Expected condition to be a Command node {:?}", condition);
+                    panic!("Expected condition to be a Command node {condition:?}");
                 }
 
                 // Check the consequence contains an echo command
@@ -5516,10 +5516,10 @@ fi
                             }
                         }
                     }
-                    other => panic!("Expected Node::Function, got {:?}", other),
+                    other => panic!("Expected Node::Function, got {other:?}"),
                 }
             }
-            other => panic!("Expected Node::List from parse_script, got {:?}", other),
+            other => panic!("Expected Node::List from parse_script, got {other:?}"),
         }
     }
 
@@ -5558,7 +5558,7 @@ fi
                 assert_eq!(name, "PATH");
                 assert!(value.is_none());
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5580,7 +5580,7 @@ fi
                     _ => panic!("Expected StringLiteral value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5602,7 +5602,7 @@ fi
                     _ => panic!("Expected StringLiteral value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5624,7 +5624,7 @@ fi
                     _ => panic!("Expected SingleQuotedString value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5649,7 +5649,7 @@ fi
                     _ => panic!("Expected Array value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5676,7 +5676,7 @@ fi
                     _ => panic!("Expected Array value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5702,7 +5702,7 @@ fi
                     _ => panic!("Expected Array value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5730,7 +5730,7 @@ fi
                     _ => panic!("Expected CommandSubstitution value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5754,7 +5754,7 @@ fi
                     _ => panic!("Expected Array value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5781,7 +5781,7 @@ fi
                     _ => panic!("Expected Array value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5803,7 +5803,7 @@ fi
                     _ => panic!("Expected StringLiteral value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -5886,7 +5886,7 @@ fi
                     _ => panic!("Expected StringLiteral value"),
                 }
             }
-            _ => panic!("Expected Export node, got {:?}", result),
+            _ => panic!("Expected Export node, got {result:?}"),
         }
     }
 
@@ -6299,7 +6299,7 @@ fi
                     _ => panic!("Expected Negation node in statements"),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6370,7 +6370,7 @@ fi
                     _ => panic!("Expected Command node in statements"),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6395,7 +6395,7 @@ fi
                     ),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6542,7 +6542,7 @@ fi
                     ),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6570,8 +6570,7 @@ fi
                                 assert!(name.is_empty() || name == "hello");
                             }
                             _ => panic!(
-                                "Expected StringLiteral or Command for case expression, got: {:?}",
-                                expression
+                                "Expected StringLiteral or Command for case expression, got: {expression:?}"
                             ),
                         }
 
@@ -6587,7 +6586,7 @@ fi
                     _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6617,7 +6616,7 @@ fi
                     _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 
@@ -6649,7 +6648,7 @@ fi
                     _ => panic!("Expected CaseStatement, got: {:?}", &statements[0]),
                 }
             }
-            _ => panic!("Expected List node, got: {:?}", result),
+            _ => panic!("Expected List node, got: {result:?}"),
         }
     }
 }

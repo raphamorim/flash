@@ -1016,17 +1016,17 @@ fi"#,
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
 
-    println!("stdout: {}", stdout);
-    println!("stderr: {}", stderr);
+    println!("stdout: {stdout}");
+    println!("stderr: {stderr}");
 
     // Check that GOPATH was expanded correctly
     let expected_gopath = format!("{}/go", home_dir.display());
-    assert!(stdout.contains(&format!("GOPATH: {}", expected_gopath)));
+    assert!(stdout.contains(&format!("GOPATH: {expected_gopath}")));
     assert!(stdout.contains("GOPATH is set"));
 
     // Check that CUSTOM_PATH was expanded correctly
     let expected_custom_path = format!("/usr/local/bin:{}/bin", home_dir.display());
-    assert!(stdout.contains(&format!("CUSTOM_PATH: {}", expected_custom_path)));
+    assert!(stdout.contains(&format!("CUSTOM_PATH: {expected_custom_path}")));
 
     assert!(output.status.success());
 }
@@ -1064,18 +1064,17 @@ echo "COMPLEX: $COMPLEX""#,
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
 
-    println!("stdout: {}", stdout);
-    println!("stderr: {}", stderr);
+    println!("stdout: {stdout}");
+    println!("stderr: {stderr}");
 
     // Check that tilde was expanded correctly
     let expected_home = home_dir.display().to_string();
-    assert!(stdout.contains(&format!("Home: {}", expected_home)));
-    assert!(stdout.contains(&format!("Documents: {}/Documents", expected_home)));
-    assert!(stdout.contains(&format!("Path: {}/bin:/usr/local/bin", expected_home)));
-    assert!(stdout.contains(&format!("GOPATH: {}/go", expected_home)));
+    assert!(stdout.contains(&format!("Home: {expected_home}")));
+    assert!(stdout.contains(&format!("Documents: {expected_home}/Documents")));
+    assert!(stdout.contains(&format!("Path: {expected_home}/bin:/usr/local/bin")));
+    assert!(stdout.contains(&format!("GOPATH: {expected_home}/go")));
     assert!(stdout.contains(&format!(
-        "COMPLEX: {}/bin:{}/local/bin",
-        expected_home, expected_home
+        "COMPLEX: {expected_home}/bin:{expected_home}/local/bin"
     )));
 
     assert!(output.status.success());
@@ -1110,8 +1109,8 @@ echo "Test completed"
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
 
-    println!("stdout: {}", stdout);
-    println!("stderr: {}", stderr);
+    println!("stdout: {stdout}");
+    println!("stderr: {stderr}");
 
     // The script should run to completion
     assert!(stdout.contains("Starting test"));
@@ -1209,7 +1208,7 @@ echo 'third command'
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("stdout: {}", stdout);
+    println!("stdout: {stdout}");
 
     // Should see all command outputs
     assert!(stdout.contains("first command"));

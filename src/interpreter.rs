@@ -235,8 +235,7 @@ impl DefaultEvaluator {
                             Ok(result) => result as i32,
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic expansion: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic expansion: invalid expression: {expanded_expr}"
                                 );
                                 0
                             }
@@ -248,8 +247,7 @@ impl DefaultEvaluator {
                             Ok(result) => result as i32,
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic command: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic command: invalid expression: {expanded_expr}"
                                 );
                                 0
                             }
@@ -274,7 +272,7 @@ impl DefaultEvaluator {
         // We'll use a custom error type for this
         Err(io::Error::new(
             io::ErrorKind::Interrupted,
-            format!("return:{}", return_code),
+            format!("return:{return_code}"),
         ))
     }
 
@@ -328,7 +326,7 @@ impl DefaultEvaluator {
                         Ok(0)
                     }
                     Err(e) => {
-                        eprintln!("cd: {}: {}", dir, e);
+                        eprintln!("cd: {dir}: {e}");
                         Ok(1)
                     }
                 }
@@ -345,7 +343,7 @@ impl DefaultEvaluator {
                 if args.is_empty() {
                     // List all exported variables
                     for (key, value) in &interpreter.variables {
-                        println!("export {}={}", key, value);
+                        println!("export {key}={value}");
                     }
                     return Ok(0);
                 }
@@ -382,7 +380,7 @@ impl DefaultEvaluator {
                 match fs::read_to_string(filename) {
                     Ok(content) => interpreter.execute(&content),
                     Err(e) => {
-                        eprintln!("source: {}: {}", filename, e);
+                        eprintln!("source: {filename}: {e}");
                         Ok(1)
                     }
                 }
@@ -415,7 +413,7 @@ impl DefaultEvaluator {
                         // seq LAST - from 1 to LAST
                         if let Ok(last) = args[0].parse::<i32>() {
                             for i in 1..=last {
-                                println!("{}", i);
+                                println!("{i}");
                             }
                             Ok(0)
                         } else {
@@ -430,11 +428,11 @@ impl DefaultEvaluator {
                         {
                             if first <= last {
                                 for i in first..=last {
-                                    println!("{}", i);
+                                    println!("{i}");
                                 }
                             } else {
                                 for i in (last..=first).rev() {
-                                    println!("{}", i);
+                                    println!("{i}");
                                 }
                             }
                             Ok(0)
@@ -456,14 +454,14 @@ impl DefaultEvaluator {
                             } else if increment > 0 && first <= last {
                                 let mut i = first;
                                 while i <= last {
-                                    println!("{}", i);
+                                    println!("{i}");
                                     i += increment;
                                 }
                                 Ok(0)
                             } else if increment < 0 && first >= last {
                                 let mut i = first;
                                 while i >= last {
-                                    println!("{}", i);
+                                    println!("{i}");
                                     i += increment;
                                 }
                                 Ok(0)
@@ -486,7 +484,7 @@ impl DefaultEvaluator {
                 if args.is_empty() {
                     // List all aliases
                     for (name, value) in &interpreter.aliases {
-                        println!("alias {}='{}'", name, value);
+                        println!("alias {name}='{value}'");
                     }
                     Ok(0)
                 } else {
@@ -513,10 +511,10 @@ impl DefaultEvaluator {
                         // Show specific alias
                         let name = &args[0];
                         if let Some(value) = interpreter.aliases.get(name) {
-                            println!("alias {}='{}'", name, value);
+                            println!("alias {name}='{value}'");
                             Ok(0)
                         } else {
-                            eprintln!("alias: {}: not found", name);
+                            eprintln!("alias: {name}: not found");
                             Ok(1)
                         }
                     } else {
@@ -533,7 +531,7 @@ impl DefaultEvaluator {
                     let mut success = true;
                     for name in args {
                         if interpreter.aliases.remove(name).is_none() {
-                            eprintln!("unalias: {}: not found", name);
+                            eprintln!("unalias: {name}: not found");
                             success = false;
                         }
                     }
@@ -552,7 +550,7 @@ impl DefaultEvaluator {
                 let completions = interpreter.completion_system.complete(&context);
 
                 for completion in completions {
-                    println!("{}", completion);
+                    println!("{completion}");
                 }
                 Ok(0)
             }
@@ -625,7 +623,7 @@ impl DefaultEvaluator {
                         Ok(status.code().unwrap_or(0))
                     }
                     Err(_) => {
-                        eprintln!("{}: command not found", name);
+                        eprintln!("{name}: command not found");
                         Ok(127)
                     }
                 }
@@ -693,8 +691,7 @@ impl DefaultEvaluator {
                             }
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic expansion: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic expansion: invalid expression: {expanded_expr}"
                                 );
                                 interpreter
                                     .variables
@@ -723,8 +720,7 @@ impl DefaultEvaluator {
                             }
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic command: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic command: invalid expression: {expanded_expr}"
                                 );
                                 interpreter
                                     .variables
@@ -886,10 +882,7 @@ impl DefaultEvaluator {
                             .insert(name.to_string(), result.to_string());
                     }
                     Err(_) => {
-                        eprintln!(
-                            "arithmetic expansion: invalid expression: {}",
-                            expanded_expr
-                        );
+                        eprintln!("arithmetic expansion: invalid expression: {expanded_expr}");
                         interpreter
                             .variables
                             .insert(name.to_string(), "0".to_string());
@@ -905,7 +898,7 @@ impl DefaultEvaluator {
                             .insert(name.to_string(), result.to_string());
                     }
                     Err(_) => {
-                        eprintln!("arithmetic command: invalid expression: {}", expanded_expr);
+                        eprintln!("arithmetic command: invalid expression: {expanded_expr}");
                         interpreter
                             .variables
                             .insert(name.to_string(), "0".to_string());
@@ -945,7 +938,7 @@ impl DefaultEvaluator {
         }
 
         for m in matches {
-            println!("{}", m);
+            println!("{m}");
         }
 
         Ok(0)
@@ -1027,7 +1020,7 @@ impl DefaultEvaluator {
             }
             _ => {
                 // For other node types, try to convert to string representation
-                format!("{:?}", expression)
+                format!("{expression:?}")
             }
         };
 
@@ -1067,7 +1060,7 @@ impl DefaultEvaluator {
                 .replace("[", "\\[")
                 .replace("]", "\\]");
 
-            if let Ok(regex) = Regex::new(&format!("^{}$", regex_pattern)) {
+            if let Ok(regex) = Regex::new(&format!("^{regex_pattern}$")) {
                 return regex.is_match(value);
             }
         }
@@ -1301,10 +1294,7 @@ impl DefaultEvaluator {
                 Ok(0)
             }
             Err(_) => {
-                eprintln!(
-                    "arithmetic expansion: invalid expression: {}",
-                    expanded_expr
-                );
+                eprintln!("arithmetic expansion: invalid expression: {expanded_expr}");
                 Ok(1)
             }
         }
@@ -1330,7 +1320,7 @@ impl DefaultEvaluator {
                 }
             }
             Err(_) => {
-                eprintln!("arithmetic command: invalid expression: {}", expanded_expr);
+                eprintln!("arithmetic command: invalid expression: {expanded_expr}");
                 Ok(1)
             }
         }
@@ -1571,7 +1561,7 @@ impl DefaultEvaluator {
         }
 
         // If we can't parse it, return an error
-        Err(format!("invalid arithmetic expression: {}", expr))
+        Err(format!("invalid arithmetic expression: {expr}"))
     }
 
     pub fn evaluate_arithmetic_expression(expr: &str) -> Result<i64, String> {
@@ -1766,7 +1756,7 @@ impl DefaultEvaluator {
         }
 
         // If we can't parse it, return an error
-        Err(format!("invalid arithmetic expression: {}", expr))
+        Err(format!("invalid arithmetic expression: {expr}"))
     }
 
     fn evaluate_test_command(
@@ -1953,7 +1943,7 @@ impl DefaultEvaluator {
                 if n > 0 && n <= interpreter.history.len() {
                     Some(interpreter.history[n - 1].clone())
                 } else {
-                    eprintln!("flash: !{}: event not found", pattern);
+                    eprintln!("flash: !{pattern}: event not found");
                     return Ok(1);
                 }
             } else {
@@ -1966,7 +1956,7 @@ impl DefaultEvaluator {
                 if n > 0 && n <= history_len {
                     Some(interpreter.history[history_len - n].clone())
                 } else {
-                    eprintln!("flash: !{}: event not found", pattern);
+                    eprintln!("flash: !{pattern}: event not found");
                     return Ok(1);
                 }
             } else {
@@ -1986,15 +1976,14 @@ impl DefaultEvaluator {
             Some(cmd) => {
                 // Check if the command we're about to execute is itself a history expansion
                 // to prevent immediate infinite recursion
-                if cmd.trim() == format!("!{}", pattern)
-                    || (pattern.is_empty() && cmd.trim() == "!!")
+                if cmd.trim() == format!("!{pattern}") || (pattern.is_empty() && cmd.trim() == "!!")
                 {
                     eprintln!("flash: history expansion would cause infinite recursion");
                     return Ok(1);
                 }
 
                 // Print the command being executed (like bash does)
-                println!("{}", cmd);
+                println!("{cmd}");
 
                 // Increment recursion depth before executing
                 interpreter.history_expansion_depth += 1;
@@ -2008,7 +1997,7 @@ impl DefaultEvaluator {
                 result
             }
             None => {
-                eprintln!("flash: !{}: event not found", pattern);
+                eprintln!("flash: !{pattern}: event not found");
                 Ok(1)
             }
         }
@@ -2071,7 +2060,7 @@ impl Interpreter {
         {
             if let Some(current_path) = variables.get("PATH") {
                 if !current_path.contains("/opt/homebrew/bin") {
-                    let new_path = format!("/opt/homebrew/bin:{}", current_path);
+                    let new_path = format!("/opt/homebrew/bin:{current_path}");
                     variables.insert("PATH".to_string(), new_path);
                 }
             } else {
@@ -2083,9 +2072,9 @@ impl Interpreter {
 
         let history_file = home_dir
             .as_ref()
-            .map(|home| format!("{}/.flash_history", home));
+            .map(|home| format!("{home}/.flash_history"));
 
-        let rc_file = home_dir.as_ref().map(|home| format!("{}/.flashrc", home));
+        let rc_file = home_dir.as_ref().map(|home| format!("{home}/.flashrc"));
 
         // Load history from file if it exists
         let mut history = Vec::new();
@@ -2114,7 +2103,7 @@ impl Interpreter {
 
         // Load and execute flashrc file if it exists
         if let Err(e) = interpreter.load_rc_file() {
-            eprintln!("Warning: Error loading flashrc: {}", e);
+            eprintln!("Warning: Error loading flashrc: {e}");
         }
 
         interpreter
@@ -2135,13 +2124,12 @@ impl Interpreter {
                         // Execute the rc file content
                         // We ignore errors in rc file execution to prevent shell startup failure
                         if let Err(e) = self.execute(&content) {
-                            eprintln!("Warning: Error executing flashrc: {}", e);
+                            eprintln!("Warning: Error executing flashrc: {e}");
                         }
                     }
                     Err(e) => {
                         return Err(io::Error::other(format!(
-                            "Failed to read flashrc file {}: {}",
-                            rc_path, e
+                            "Failed to read flashrc file {rc_path}: {e}"
                         )));
                     }
                 }
@@ -2169,7 +2157,7 @@ impl Interpreter {
         if let Some(ref file_path) = self.history_file {
             let mut file = fs::File::create(file_path)?;
             for line in &self.history {
-                writeln!(file, "{}", line)?;
+                writeln!(file, "{line}")?;
             }
         }
         Ok(())
@@ -2239,7 +2227,7 @@ impl Interpreter {
         // Check if we're completing a variable
         if input_up_to_cursor.ends_with('$') {
             // Complete variable names
-            let vars: Vec<String> = self.variables.keys().map(|k| format!("${}", k)).collect();
+            let vars: Vec<String> = self.variables.keys().map(|k| format!("${k}")).collect();
             return (vars.clone(), vars);
         }
 
@@ -2256,7 +2244,7 @@ impl Interpreter {
                     .variables
                     .keys()
                     .filter(|k| k.starts_with(var_prefix))
-                    .map(|k| format!("${}", k))
+                    .map(|k| format!("${k}"))
                     .collect();
                 return (suffixes, full_names);
             }
@@ -2400,9 +2388,9 @@ impl Interpreter {
                                         // When completing directly in home directory, show just the filename like bash
                                         name.to_string()
                                     } else if relative_path.starts_with('/') {
-                                        format!("~{}/{}", relative_path, name)
+                                        format!("~{relative_path}/{name}")
                                     } else {
-                                        format!("~/{}/{}", relative_path, name)
+                                        format!("~/{relative_path}/{name}")
                                     }
                                 } else {
                                     format!("{}/{}", dir_path.display(), name)
@@ -2452,7 +2440,7 @@ impl Interpreter {
 
         // Display completions in columns
         for (i, completion) in completions.iter().enumerate() {
-            print!("{:<width$}", completion, width = max_width);
+            print!("{completion:<max_width$}");
             if (i + 1) % columns == 0 {
                 println!();
             }
@@ -2589,7 +2577,7 @@ impl Interpreter {
 
         loop {
             let prompt = self.get_prompt();
-            write!(stdout, "{}", prompt)?;
+            write!(stdout, "{prompt}")?;
             stdout.flush()?;
 
             let input = self.read_line_with_completion(
@@ -2623,7 +2611,7 @@ impl Interpreter {
                     self.variables.insert("?".to_string(), code.to_string());
                 }
                 Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Error: {e}");
                     self.last_exit_code = 1;
                     self.variables.insert("?".to_string(), "1".to_string());
                 }
@@ -2693,7 +2681,7 @@ impl Interpreter {
                             cursor_pos += suffix.len();
 
                             // Redraw the line with the completion
-                            write!(stdout, "\r{}{}", prompt, buffer)?;
+                            write!(stdout, "\r{prompt}{buffer}")?;
                             stdout.flush()?;
                         }
                         std::cmp::Ordering::Greater => {
@@ -2705,20 +2693,20 @@ impl Interpreter {
                                     cursor_pos += common_prefix.len();
 
                                     // Redraw the line with the partial completion
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     stdout.flush()?;
                                 } else {
                                     // No common prefix, show all completions (using full names for display)
                                     self.display_completions(&full_names)?;
                                     // Redraw the prompt and line
-                                    write!(stdout, "{}{}", prompt, buffer)?;
+                                    write!(stdout, "{prompt}{buffer}")?;
                                     stdout.flush()?;
                                 }
                             } else {
                                 // No common prefix found, show all completions (using full names for display)
                                 self.display_completions(&full_names)?;
                                 // Redraw the prompt and line
-                                write!(stdout, "{}{}", prompt, buffer)?;
+                                write!(stdout, "{prompt}{buffer}")?;
                                 stdout.flush()?;
                             }
                         }
@@ -2729,9 +2717,9 @@ impl Interpreter {
                     if cursor_pos > 0 {
                         buffer.remove(cursor_pos - 1);
                         cursor_pos -= 1;
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, " ")?; // Clear deleted character
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                 }
@@ -2739,14 +2727,14 @@ impl Interpreter {
                 // Ctrl-A (move to beginning of line)
                 1 => {
                     cursor_pos = 0;
-                    write!(stdout, "\r{}", prompt)?;
+                    write!(stdout, "\r{prompt}")?;
                     stdout.flush()?;
                 }
 
                 // Ctrl-E (move to end of line)
                 5 => {
                     cursor_pos = buffer.len();
-                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                    write!(stdout, "\r{prompt}{buffer}")?;
                     stdout.flush()?;
                 }
 
@@ -2754,7 +2742,7 @@ impl Interpreter {
                 2 => {
                     if cursor_pos > 0 {
                         cursor_pos -= 1;
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -2767,7 +2755,7 @@ impl Interpreter {
                 6 => {
                     if cursor_pos < buffer.len() {
                         cursor_pos += 1;
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -2786,9 +2774,9 @@ impl Interpreter {
                         buffer.truncate(cursor_pos);
 
                         // Redraw
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                 }
@@ -2804,9 +2792,9 @@ impl Interpreter {
                         cursor_pos = 0;
 
                         // Redraw
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                 }
@@ -2818,7 +2806,7 @@ impl Interpreter {
                         cursor_pos += kill_ring.len();
 
                         // Redraw
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -2855,9 +2843,9 @@ impl Interpreter {
                             cursor_pos = word_start;
 
                             // Redraw the line
-                            write!(stdout, "\r{}{}", prompt, buffer)?;
+                            write!(stdout, "\r{prompt}{buffer}")?;
                             write!(stdout, "                    ")?; // Clear any leftovers
-                            write!(stdout, "\r{}{}", prompt, buffer)?;
+                            write!(stdout, "\r{prompt}{buffer}")?;
                             stdout.flush()?;
                         }
                     }
@@ -2867,7 +2855,7 @@ impl Interpreter {
                 12 => {
                     // Clear the screen and redraw the prompt
                     write!(stdout, "\x1B[2J\x1B[H")?; // ANSI escape sequence to clear screen and move cursor to home
-                    write!(stdout, "{}{}", prompt, buffer)?;
+                    write!(stdout, "{prompt}{buffer}")?;
                     stdout.flush()?;
                 }
 
@@ -2877,9 +2865,9 @@ impl Interpreter {
                         *history_index -= 1;
                         buffer = self.history[*history_index].clone();
                         cursor_pos = buffer.len();
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                 }
@@ -2895,9 +2883,9 @@ impl Interpreter {
                             buffer = self.history[*history_index].clone();
                             cursor_pos = buffer.len();
                         }
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, "                    ")?; // Clear any leftovers
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                 }
@@ -2920,7 +2908,7 @@ impl Interpreter {
                         // Cursor remains at the end
 
                         // Redraw
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         stdout.flush()?;
                     }
                     // Handle cursor within the line
@@ -2933,7 +2921,7 @@ impl Interpreter {
                         cursor_pos += 1;
 
                         // Redraw
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -2949,9 +2937,9 @@ impl Interpreter {
                         return Ok("exit".to_string());
                     } else if cursor_pos < buffer.len() {
                         buffer.remove(cursor_pos);
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         write!(stdout, " ")?; // Clear deleted character
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -2992,7 +2980,7 @@ impl Interpreter {
                                     buffer = self.history[search_index].clone();
                                     cursor_pos = buffer.len();
                                 } else {
-                                    write!(stdout, "\r{}{}", prompt, original_buffer)?;
+                                    write!(stdout, "\r{prompt}{original_buffer}")?;
                                     cursor_pos = original_cursor_pos;
                                 }
                                 stdout.flush()?;
@@ -3001,7 +2989,7 @@ impl Interpreter {
 
                             // Escape - cancel search
                             27 => {
-                                write!(stdout, "\r{}{}", prompt, original_buffer)?;
+                                write!(stdout, "\r{prompt}{original_buffer}")?;
                                 cursor_pos = original_cursor_pos;
                                 stdout.flush()?;
                                 break;
@@ -3076,8 +3064,7 @@ impl Interpreter {
                                     } else {
                                         write!(
                                             stdout,
-                                            "\r(failed reverse-i-search)`{}': ",
-                                            search_term
+                                            "\r(failed reverse-i-search)`{search_term}': "
                                         )?;
                                     }
                                     stdout.flush()?;
@@ -3114,8 +3101,7 @@ impl Interpreter {
                                     } else {
                                         write!(
                                             stdout,
-                                            "\r(failed reverse-i-search)`{}': ",
-                                            search_term
+                                            "\r(failed reverse-i-search)`{search_term}': "
                                         )?;
                                     }
                                     stdout.flush()?;
@@ -3139,7 +3125,7 @@ impl Interpreter {
                     cursor_pos = 0;
 
                     // Show a fresh prompt on the new line
-                    write!(stdout, "{}", prompt)?;
+                    write!(stdout, "{prompt}")?;
                     stdout.flush()?;
                 }
 
@@ -3157,9 +3143,9 @@ impl Interpreter {
                                     *history_index -= 1;
                                     buffer = self.history[*history_index].clone();
                                     cursor_pos = buffer.len();
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     write!(stdout, "                    ")?; // Clear any leftovers
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     stdout.flush()?;
                                 }
                             }
@@ -3175,9 +3161,9 @@ impl Interpreter {
                                         buffer = self.history[*history_index].clone();
                                         cursor_pos = buffer.len();
                                     }
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     write!(stdout, "                    ")?; // Clear any leftovers
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     stdout.flush()?;
                                 }
                             }
@@ -3186,7 +3172,7 @@ impl Interpreter {
                             b'D' => {
                                 if cursor_pos > 0 {
                                     cursor_pos -= 1;
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     // Move cursor back to the right position
                                     for _ in 0..(buffer.len() - cursor_pos) {
                                         write!(stdout, "\x1B[D")?;
@@ -3199,7 +3185,7 @@ impl Interpreter {
                             b'C' => {
                                 if cursor_pos < buffer.len() {
                                     cursor_pos += 1;
-                                    write!(stdout, "\r{}{}", prompt, buffer)?;
+                                    write!(stdout, "\r{prompt}{buffer}")?;
                                     // Move cursor back to the right position
                                     for _ in 0..(buffer.len() - cursor_pos) {
                                         write!(stdout, "\x1B[D")?;
@@ -3220,7 +3206,7 @@ impl Interpreter {
                     if ch.is_ascii() && !ch.is_control() {
                         buffer.insert(cursor_pos, ch);
                         cursor_pos += 1;
-                        write!(stdout, "\r{}{}", prompt, buffer)?;
+                        write!(stdout, "\r{prompt}{buffer}")?;
                         // Move cursor back to the right position
                         for _ in 0..(buffer.len() - cursor_pos) {
                             write!(stdout, "\x1B[D")?;
@@ -3328,8 +3314,7 @@ impl Interpreter {
                 // This is simplified and doesn't handle all glob features
                 let escaped = regex::escape(p);
                 let regex_str = escaped.replace("\\*", ".*").replace("\\?", ".");
-                Regex::new(&format!("^{}$", regex_str))
-                    .unwrap_or_else(|_| Regex::new("^$").unwrap())
+                Regex::new(&format!("^{regex_str}$")).unwrap_or_else(|_| Regex::new("^$").unwrap())
             })
             .collect();
 
@@ -3500,8 +3485,7 @@ impl Interpreter {
                             }
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic expansion: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic expansion: invalid expression: {expanded_expr}"
                                 );
                                 self.variables.insert(name.clone(), "0".to_string());
                                 Ok("0".to_string())
@@ -3518,8 +3502,7 @@ impl Interpreter {
                             }
                             Err(_) => {
                                 eprintln!(
-                                    "arithmetic command: invalid expression: {}",
-                                    expanded_expr
+                                    "arithmetic command: invalid expression: {expanded_expr}"
                                 );
                                 self.variables.insert(name.clone(), "0".to_string());
                                 Ok("0".to_string())
@@ -3703,8 +3686,7 @@ impl Interpreter {
                                 }
                                 Err(_) => {
                                     eprintln!(
-                                        "arithmetic expansion: invalid expression: {}",
-                                        arith_content
+                                        "arithmetic expansion: invalid expression: {arith_content}"
                                     );
                                     result.push('0');
                                 }
@@ -3994,7 +3976,7 @@ impl Interpreter {
                 if let Some(range_items) = self.expand_brace_range(brace_content) {
                     let mut results = Vec::new();
                     for item in range_items {
-                        results.push(format!("{}{}{}", prefix, item, suffix));
+                        results.push(format!("{prefix}{item}{suffix}"));
                     }
                     return Some(results);
                 }
@@ -4406,7 +4388,7 @@ mod tests {
         assert_ne!(&initial_pwd, new_pwd);
 
         // The prompt should reflect the new PWD
-        assert_eq!(new_prompt, format!("flash:{}$ ", new_pwd));
+        assert_eq!(new_prompt, format!("flash:{new_pwd}$ "));
     }
 
     #[test]
@@ -4952,9 +4934,9 @@ mod tests {
         ];
 
         for keyword in keywords {
-            let cmd = format!("echo {}", keyword);
+            let cmd = format!("echo {keyword}");
             let result = interpreter.execute(&cmd).unwrap();
-            assert_eq!(result, 0, "Failed to echo keyword: {}", keyword);
+            assert_eq!(result, 0, "Failed to echo keyword: {keyword}");
         }
     }
 
@@ -5036,8 +5018,7 @@ mod tests {
         });
         assert!(
             has_expected,
-            "Expected completions to contain test files, got: {:?}",
-            full_names
+            "Expected completions to contain test files, got: {full_names:?}"
         );
 
         // Test directory completion (should add trailing slash)
@@ -5048,8 +5029,7 @@ mod tests {
             .any(|name| name.contains("testdir") && name.ends_with('/'));
         assert!(
             has_dir,
-            "Expected directory completion with trailing slash, got: {:?}",
-            full_names
+            "Expected directory completion with trailing slash, got: {full_names:?}"
         );
 
         // Test with specific file prefix
@@ -5058,8 +5038,7 @@ mod tests {
         let has_test1 = full_names.iter().any(|name| name.contains("test1.txt"));
         assert!(
             has_test1,
-            "Expected test1.txt completion, got: {:?}",
-            full_names
+            "Expected test1.txt completion, got: {full_names:?}"
         );
     }
 
@@ -5105,8 +5084,7 @@ mod tests {
         for completion in &full_names {
             assert!(
                 completion.ends_with('/'),
-                "CD completion '{}' should be a directory",
-                completion
+                "CD completion '{completion}' should be a directory"
             );
         }
     }
@@ -5125,8 +5103,7 @@ mod tests {
         // Should complete the variable
         assert!(
             full_names.iter().any(|c| c == "$TEST_VAR"),
-            "Should complete variable, got: {:?}",
-            full_names
+            "Should complete variable, got: {full_names:?}"
         );
     }
 
@@ -5215,8 +5192,7 @@ mod tests {
         for cmd in &expected_commands {
             assert!(
                 system.command_completions.contains_key(*cmd),
-                "Should have completion for '{}'",
-                cmd
+                "Should have completion for '{cmd}'"
             );
         }
 
@@ -5245,8 +5221,7 @@ mod tests {
         let duration = start.elapsed();
         assert!(
             duration.as_millis() < 1000,
-            "Completion should be fast, took {:?}",
-            duration
+            "Completion should be fast, took {duration:?}"
         );
     }
 
@@ -5267,9 +5242,7 @@ mod tests {
             // Should not crash and should return valid results
             assert!(
                 suffixes.len() == full_names.len(),
-                "Suffixes and full_names should have same length for input '{}' at pos {}",
-                input,
-                pos
+                "Suffixes and full_names should have same length for input '{input}' at pos {pos}"
             );
         }
     }
@@ -5334,8 +5307,7 @@ mod tests {
             .any(|c| c.contains("subdir") || c.contains("file.txt"));
         assert!(
             has_expected_completion,
-            "Expected completions to contain subdir or file.txt, got: {:?}",
-            full_names
+            "Expected completions to contain subdir or file.txt, got: {full_names:?}"
         );
 
         // Test completion with partial path
@@ -5344,8 +5316,7 @@ mod tests {
         let has_subdir = suffixes.iter().any(|c| c.contains("ubdir"));
         assert!(
             has_subdir,
-            "Expected suffixes to contain 'ubdir', got: {:?}",
-            suffixes
+            "Expected suffixes to contain 'ubdir', got: {suffixes:?}"
         );
 
         // Test completion with file path
@@ -5354,8 +5325,7 @@ mod tests {
         let has_file = suffixes.iter().any(|c| c.contains("ile.txt"));
         assert!(
             has_file,
-            "Expected suffixes to contain 'ile.txt', got: {:?}",
-            suffixes
+            "Expected suffixes to contain 'ile.txt', got: {suffixes:?}"
         );
     }
 
@@ -5371,9 +5341,7 @@ mod tests {
         let has_echo_or_export_suffix = suffixes.iter().any(|c| *c == "cho" || *c == "xport");
         assert!(
             has_echo_or_export || has_echo_or_export_suffix,
-            "Expected completions to include echo or export, got full_names: {:?}, suffixes: {:?}",
-            full_names,
-            suffixes
+            "Expected completions to include echo or export, got full_names: {full_names:?}, suffixes: {suffixes:?}"
         );
 
         // Test path completion after command
@@ -5397,9 +5365,7 @@ mod tests {
                     .any(|c| c.contains("file") || c == "file.txt");
                 assert!(
                     has_testfile || has_testfile_suffix,
-                    "Expected completions to include 'testfile.txt', got full_names: {:?}, suffixes: {:?}",
-                    full_names,
-                    suffixes
+                    "Expected completions to include 'testfile.txt', got full_names: {full_names:?}, suffixes: {suffixes:?}"
                 );
 
                 // Restore original working directory BEFORE temp_dir is dropped
@@ -5429,13 +5395,11 @@ mod tests {
         let has_path_full = full_names.iter().any(|c| c == "$TEST_PATH");
         assert!(
             has_path_suffix,
-            "Expected suffixes to include 'PATH', got: {:?}",
-            suffixes
+            "Expected suffixes to include 'PATH', got: {suffixes:?}"
         );
         assert!(
             has_path_full,
-            "Expected full_names to include '$TEST_PATH', got: {:?}",
-            full_names
+            "Expected full_names to include '$TEST_PATH', got: {full_names:?}"
         );
 
         // Test completion right after $
@@ -5443,8 +5407,7 @@ mod tests {
         let has_test_path = full_names.iter().any(|c| c == "$TEST_PATH");
         assert!(
             has_test_path,
-            "Expected full_names to include '$TEST_PATH', got: {:?}",
-            full_names
+            "Expected full_names to include '$TEST_PATH', got: {full_names:?}"
         );
     }
 
@@ -6383,11 +6346,11 @@ mod tests {
 
         // Test tilde with slash
         let expanded = interpreter.expand_tilde("~/");
-        assert_eq!(expanded, format!("{}/", home_dir));
+        assert_eq!(expanded, format!("{home_dir}/"));
 
         // Test tilde with path
         let expanded = interpreter.expand_tilde("~/Documents");
-        assert_eq!(expanded, format!("{}/Documents", home_dir));
+        assert_eq!(expanded, format!("{home_dir}/Documents"));
 
         // Test non-tilde path (should remain unchanged)
         let expanded = interpreter.expand_tilde("/usr/local");
@@ -6509,8 +6472,7 @@ mod tests {
         if let Some(dir_name) = dir_entry {
             assert!(
                 dir_name.ends_with('/'),
-                "Directory should have trailing slash: {}",
-                dir_name
+                "Directory should have trailing slash: {dir_name}"
             );
         }
 
@@ -6520,8 +6482,7 @@ mod tests {
         if let Some(file_name) = file_entry {
             assert!(
                 !file_name.ends_with('/'),
-                "File should not have trailing slash: {}",
-                file_name
+                "File should not have trailing slash: {file_name}"
             );
         }
     }
@@ -6603,20 +6564,17 @@ mod tests {
         for name in &full_names {
             assert!(
                 !name.contains("//"),
-                "Found double slash in completion: {}",
-                name
+                "Found double slash in completion: {name}"
             );
             // When completing in home directory, should show just filename (like bash)
             if name.contains("test_") {
                 assert!(
                     !name.starts_with("~/"),
-                    "Home directory completion should not have ~/ prefix: {}",
-                    name
+                    "Home directory completion should not have ~/ prefix: {name}"
                 );
                 assert!(
                     name.starts_with("test"),
-                    "Should show just the filename: {}",
-                    name
+                    "Should show just the filename: {name}"
                 );
             }
         }
@@ -6628,15 +6586,13 @@ mod tests {
         for name in &full_names {
             assert!(
                 !name.contains("//"),
-                "Found double slash in completion: {}",
-                name
+                "Found double slash in completion: {name}"
             );
             // For partial matches in home directory, should still show just filename
             if name.contains("test_") {
                 assert!(
                     name.starts_with("test"),
-                    "Completion should show filename: {}",
-                    name
+                    "Completion should show filename: {name}"
                 );
             }
         }
@@ -6679,8 +6635,7 @@ mod tests {
             if name.contains("test_") {
                 assert!(
                     name.starts_with("~/Documents/"),
-                    "Subdirectory completion should show full path: {}",
-                    name
+                    "Subdirectory completion should show full path: {name}"
                 );
             }
         }
@@ -6693,8 +6648,7 @@ mod tests {
             if name.contains("test_") {
                 assert!(
                     name.starts_with("~/Documents/test"),
-                    "Subdirectory completion should show full path: {}",
-                    name
+                    "Subdirectory completion should show full path: {name}"
                 );
             }
         }

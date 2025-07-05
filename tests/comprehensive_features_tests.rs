@@ -143,7 +143,7 @@ fn test_builtin_commands() {
         let ast = parser.parse_script();
 
         let result = evaluator.evaluate(&ast, &mut interpreter);
-        assert!(result.is_ok(), "Command failed: {}", cmd);
+        assert!(result.is_ok(), "Command failed: {cmd}");
     }
 }
 
@@ -198,7 +198,7 @@ fn test_parser_comprehensive() {
             flash::parser::Node::List { .. } => {
                 // Success
             }
-            _ => panic!("Expected list node for: {}", script),
+            _ => panic!("Expected list node for: {script}"),
         }
     }
 }

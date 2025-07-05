@@ -1491,7 +1491,7 @@ mod lexer_tests {
 
         let mut token = lexer.next_token();
         while token.kind != TokenKind::EOF {
-            println!("Token: {:?}", token);
+            println!("Token: {token:?}");
             token = lexer.next_token();
         }
     }

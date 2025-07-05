@@ -279,9 +279,9 @@ impl Formatter {
                     };
 
                     if self.config.space_redirects {
-                        result.push_str(&format!(" {} ", redirect_op));
+                        result.push_str(&format!(" {redirect_op} "));
                     } else {
-                        result.push_str(&format!(" {}", redirect_op));
+                        result.push_str(&format!(" {redirect_op}"));
                         if !redirect.file.starts_with('&') {
                             // Don't add space for &2 etc.
                             result.push(' ');

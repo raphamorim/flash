@@ -78,8 +78,7 @@ fn test_cd_completion_integration() {
     for completion in &full_names {
         assert!(
             completion.ends_with('/'),
-            "CD completion '{}' should be a directory",
-            completion
+            "CD completion '{completion}' should be a directory"
         );
     }
 }

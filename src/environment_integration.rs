@@ -116,7 +116,7 @@ pub mod env_helpers {
 
         // Load RC file if it exists
         if let Some(home) = env.get("HOME") {
-            let rc_file = format!("{}/.flashrc", home);
+            let rc_file = format!("{home}/.flashrc");
             if std::path::Path::new(&rc_file).exists() {
                 // TODO: Load and execute RC file
                 env.set("FLASH_RC_LOADED", "1".to_string());

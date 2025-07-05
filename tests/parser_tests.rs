@@ -313,13 +313,13 @@ fn test_parse_arithmetic_command() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 
     // Check that we get an ArithmeticCommand node
     if let Node::List { statements, .. } = ast {
         assert_eq!(statements.len(), 1);
         if let Node::ArithmeticCommand { expression } = &statements[0] {
-            println!("Expression: '{}'", expression);
+            println!("Expression: '{expression}'");
             assert!(expression.contains("5"));
             assert!(expression.contains("10"));
             assert!(expression.contains("=="));
@@ -327,7 +327,7 @@ fn test_parse_arithmetic_command() {
             panic!("Expected ArithmeticCommand, got {:?}", statements[0]);
         }
     } else {
-        panic!("Expected List, got {:?}", ast);
+        panic!("Expected List, got {ast:?}");
     }
 }
 
@@ -340,12 +340,12 @@ fn test_parse_equality_expression() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 
     // Check the exact expression string
     if let Node::List { statements, .. } = ast {
         if let Node::ArithmeticCommand { expression } = &statements[0] {
-            println!("Exact expression: '{}'", expression);
+            println!("Exact expression: '{expression}'");
             // Check that it contains ==, not separate = characters
             assert!(expression.contains("=="));
             assert!(!expression.contains("= ="));
@@ -362,12 +362,12 @@ fn test_parse_gte_expression() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 
     // Check the exact expression string
     if let Node::List { statements, .. } = ast {
         if let Node::ArithmeticCommand { expression } = &statements[0] {
-            println!("Exact expression: '{}'", expression);
+            println!("Exact expression: '{expression}'");
             // Check that it contains >=
             assert!(expression.contains(">="));
         }
@@ -383,13 +383,13 @@ fn test_parse_nested_arithmetic() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 
     // Check what expression is being generated
     if let Node::List { statements, .. } = ast {
         println!("Number of statements: {}", statements.len());
         for (i, stmt) in statements.iter().enumerate() {
-            println!("Statement {}: {:?}", i, stmt);
+            println!("Statement {i}: {stmt:?}");
         }
     }
 }
@@ -403,7 +403,7 @@ fn test_parse_arithmetic_expansion_with_vars() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 }
 
 #[test]
@@ -415,13 +415,13 @@ fn test_parse_deeply_nested() {
     let mut parser = Parser::new(lexer);
 
     let ast = parser.parse_script();
-    println!("AST: {:?}", ast);
+    println!("AST: {ast:?}");
 
     // Check what expression is being generated
     if let Node::List { statements, .. } = ast {
         println!("Number of statements: {}", statements.len());
         for (i, stmt) in statements.iter().enumerate() {
-            println!("Statement {}: {:?}", i, stmt);
+            println!("Statement {i}: {stmt:?}");
         }
     }
 }
