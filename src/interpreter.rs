@@ -1331,6 +1331,7 @@ impl DefaultEvaluator {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     pub fn evaluate_arithmetic_expression_with_assignment(
         &mut self,
         expr: &str,
@@ -1379,8 +1380,8 @@ impl DefaultEvaluator {
                         self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
 
                     // Extract variable name from left side (remove $ if present)
-                    let var_name = if left.starts_with('$') {
-                        &left[1..]
+                    let var_name = if let Some(stripped) = left.strip_prefix('$') {
+                        stripped
                     } else {
                         left
                     };
@@ -5138,7 +5139,7 @@ mod tests {
 
         // Should include the alias in command completions
         // Note: This tests the fallback system since aliases aren't in the new completion system yet
-        assert!(full_names.len() > 0, "Should return some completions");
+        assert!(!full_names.is_empty(), "Should return some completions");
     }
 
     #[test]
@@ -5197,7 +5198,7 @@ mod tests {
         let (_suffixes, full_names) = interpreter.generate_completions("echo ", 5);
 
         // Should return file completions (fallback behavior)
-        assert!(full_names.len() > 0); // At least doesn't crash
+        assert!(!full_names.is_empty()); // At least doesn't crash
     }
 
     #[test]

@@ -319,7 +319,7 @@ impl Environment {
             if let Some(var) = layer.get_mut(name) {
                 var.flags.export = true;
                 unsafe {
-                    env::set_var(name, &var.value.as_string());
+                    env::set_var(name, var.value.as_string());
                 }
                 return;
             }

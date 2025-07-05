@@ -396,7 +396,7 @@ fn test_parse_nested_arithmetic() {
 #[test]
 fn test_parse_arithmetic_expansion_with_vars() {
     use flash::lexer::Lexer;
-    use flash::parser::{Node, Parser};
+    use flash::parser::Parser;
 
     let lexer = Lexer::new("echo $((a * 2))");
     let mut parser = Parser::new(lexer);

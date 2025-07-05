@@ -514,7 +514,7 @@ impl CompletionSystem {
 
         // Try to get branches from git
         if let Ok(output) = Command::new("git")
-            .args(&["branch", "--format=%(refname:short)"])
+            .args(["branch", "--format=%(refname:short)"])
             .output()
         {
             if output.status.success() {
@@ -549,12 +549,12 @@ impl CompletionSystem {
         let mut completions = Vec::new();
 
         // Complete process IDs and names
-        if let Ok(output) = Command::new("ps").args(&["-eo", "pid,comm"]).output() {
+        if let Ok(output) = Command::new("ps").args(["-eo", "pid,comm"]).output() {
             if output.status.success() {
                 let ps_output = String::from_utf8_lossy(&output.stdout);
                 for line in ps_output.lines().skip(1) {
                     // Skip header
-                    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+                    let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
                         let pid = parts[0];
                         let comm = parts[1];
@@ -764,7 +764,7 @@ mod tests {
         // Should return some files/directories from current directory
         // We can't assert specific files since it depends on the test environment
         // But we can check that it doesn't crash and returns a Vec
-        assert!(completions.len() > 0 || completions.is_empty()); // At least doesn't crash
+        assert!(!completions.is_empty() || completions.is_empty()); // At least doesn't crash
     }
 
     #[test]
@@ -893,7 +893,7 @@ mod tests {
         let completions = system.complete_ssh(&context);
         // Should return hostnames (we can't assert specific ones)
         // But should not crash
-        assert!(completions.len() > 0 || completions.is_empty());
+        assert!(!completions.is_empty() || completions.is_empty());
     }
 
     #[test]
@@ -936,7 +936,7 @@ mod tests {
 
         // Should return file completions (we can't assert specific files)
         // But should not crash
-        assert!(completions.len() > 0 || completions.is_empty());
+        assert!(!completions.is_empty() || completions.is_empty());
     }
 
     #[test]
@@ -991,7 +991,7 @@ mod tests {
         let completions = system.complete_man(&context);
         // Should return man page completions (we can't assert specific ones)
         // But should not crash
-        assert!(completions.len() > 0 || completions.is_empty());
+        assert!(!completions.is_empty() || completions.is_empty());
     }
 
     #[test]
@@ -1079,7 +1079,7 @@ mod tests {
         let completions = system.complete_git(&context);
         // Should return branch completions (we can't assert specific branches)
         // But should not crash
-        assert!(completions.len() > 0 || completions.is_empty());
+        assert!(!completions.is_empty() || completions.is_empty());
     }
 
     #[test]
@@ -1107,7 +1107,7 @@ mod tests {
         let completions = system.complete_files("~/");
 
         // Should handle tilde expansion without crashing
-        assert!(completions.len() > 0 || completions.is_empty());
+        assert!(!completions.is_empty() || completions.is_empty());
 
         // If there are completions, they should preserve the tilde prefix
         for completion in &completions {
