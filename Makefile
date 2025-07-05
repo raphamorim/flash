@@ -44,7 +44,7 @@ wasm-demo-build:
 		curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh; \
 	fi
 	@echo "Building WebAssembly module..."
-	@cd docs && wasm-pack build --target web --out-dir pkg
+	@cd docs && wasm-pack build --release --target web --out-dir pkg
 	@echo "Removing wasm-pack generated .gitignore to allow committing WASM files..."
 	@rm -f docs/pkg/.gitignore
 	@echo "Build complete!"

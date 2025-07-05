@@ -2,7 +2,7 @@
 
 This demo compiles the Flash shell parser to WebAssembly, allowing you to parse shell code directly in the browser.
 
-**🔗 [Flash on GitHub](https://github.com/raphamorim/flash)**
+**[Flash on GitHub](https://github.com/raphamorim/flash)**
 
 ## Features
 
