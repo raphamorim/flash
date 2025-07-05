@@ -2339,8 +2339,7 @@ mod lexer_tests {
         let input = "for ((i=0; i<5; i++)); do echo $i; done";
         let expected = vec![
             TokenKind::For,
-            TokenKind::LParen,
-            TokenKind::LParen,
+            TokenKind::ArithCommand,
             TokenKind::Word("i".to_string()),
             TokenKind::Assignment,
             TokenKind::Word("0".to_string()),
@@ -2368,8 +2367,7 @@ mod lexer_tests {
         let input = "for ((i=5; i>0; i--)); do echo $i; done";
         let expected = vec![
             TokenKind::For,
-            TokenKind::LParen,
-            TokenKind::LParen,
+            TokenKind::ArithCommand,
             TokenKind::Word("i".to_string()),
             TokenKind::Assignment,
             TokenKind::Word("5".to_string()),

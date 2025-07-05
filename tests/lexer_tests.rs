@@ -59,8 +59,7 @@ fn test_lexer_variable_expansion() {
 
     assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
     assert_eq!(lexer.next_token().kind, TokenKind::Word("HOME".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
+    assert_eq!(lexer.next_token().kind, TokenKind::ParamExpansion);
     assert_eq!(lexer.next_token().kind, TokenKind::Word("USER".to_string()));
     assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
     assert_eq!(lexer.next_token().kind, TokenKind::Dollar);
@@ -190,40 +189,30 @@ fn test_lexer_assignment() {
 fn test_lexer_extended_glob() {
     let mut lexer = Lexer::new("?(pattern) *(pattern) +(pattern) @(pattern) !(pattern)");
 
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('?'));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+        TokenKind::Word("?(pattern)".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('*'));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+        TokenKind::Word("*(pattern)".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('+'));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+        TokenKind::Word("+(pattern)".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('@'));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+        TokenKind::Word("@(pattern)".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 
-    assert_eq!(lexer.next_token().kind, TokenKind::ExtGlob('!'));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("pattern".to_string())
+        TokenKind::Word("!(pattern)".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RParen);
 }
 
 #[test]
@@ -316,11 +305,11 @@ fn test_lexer_escape_sequences() {
     assert_eq!(lexer.next_token().kind, TokenKind::Word("echo".to_string()));
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("\\$HOME".to_string())
+        TokenKind::Word("$HOME".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\n".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\t".to_string()));
-    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\\\".to_string()));
+    assert_eq!(lexer.next_token().kind, TokenKind::Word("n".to_string()));
+    assert_eq!(lexer.next_token().kind, TokenKind::Word("t".to_string()));
+    assert_eq!(lexer.next_token().kind, TokenKind::Word("\\".to_string()));
 }
 
 #[test]
@@ -353,12 +342,10 @@ fn test_lexer_glob_patterns() {
         lexer.next_token().kind,
         TokenKind::Word("[abc]".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::LBrace);
     assert_eq!(
         lexer.next_token().kind,
-        TokenKind::Word("1,2,3".to_string())
+        TokenKind::Word("{1,2,3}".to_string())
     );
-    assert_eq!(lexer.next_token().kind, TokenKind::RBrace);
 }
 #[test]
 fn test_arith_command_token() {

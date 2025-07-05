@@ -15,6 +15,12 @@ test:
 	RUST_BACKTRACE=full cargo test --release
 	RUST_BACKTRACE=full cargo test --test integration_tests
 
+# Run in a single thread is often useful to catch infinite loops early on
+test-single-thread:
+	make lint
+	RUST_BACKTRACE=full cargo test --release -- --test-threads=1
+	RUST_BACKTRACE=full cargo test --test integration_tests -- --test-threads=1
+
 test-if:
 	@echo "Building Flash for if/elif/else functionality tests..."
 	@cargo build --release

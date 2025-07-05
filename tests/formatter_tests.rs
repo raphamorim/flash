@@ -24,7 +24,7 @@ fn format_script(script: &str) -> String {
 fn test_formatter_simple_command() {
     let input = "echo hello";
     let output = format_script(input);
-    assert_eq!(output, "echo hello\n");
+    assert_eq!(output, "echo hello");
 }
 
 #[cfg(feature = "formatter")]
@@ -32,7 +32,7 @@ fn test_formatter_simple_command() {
 fn test_formatter_pipeline() {
     let input = "ls|grep test";
     let output = format_script(input);
-    assert_eq!(output, "ls | grep test\n");
+    assert_eq!(output, "ls | grep test");
 }
 
 #[cfg(feature = "formatter")]

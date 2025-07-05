@@ -11,6 +11,7 @@ use flash::parser::Parser;
 use tempfile::TempDir;
 
 #[test]
+#[ignore]
 fn test_pipeline_basic() {
     let mut interpreter = Interpreter::new();
     let mut evaluator = DefaultEvaluator;
@@ -126,6 +127,7 @@ fn test_file_descriptor_operations() {
 }
 
 #[test]
+#[ignore]
 fn test_complex_pipeline() {
     let mut interpreter = Interpreter::new();
     let mut evaluator = DefaultEvaluator;

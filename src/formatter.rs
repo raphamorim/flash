@@ -685,6 +685,76 @@ impl Formatter {
 
                 result
             }
+            Node::ForLoop {
+                variable,
+                iterable,
+                body,
+            } => {
+                let mut result = self.indent();
+                result.push_str("for ");
+                result.push_str(variable);
+                result.push_str(" in ");
+
+                // Format iterable
+                let iterable_str = self.format(iterable);
+                result.push_str(iterable_str.trim_start());
+
+                result.push_str("; do");
+
+                if !self.config.never_split {
+                    result.push('\n');
+
+                    // Format body with increased indent
+                    self.indent_level += 1;
+                    result.push_str(&self.format(body));
+                    self.indent_level -= 1;
+
+                    result.push('\n');
+                    result.push_str(&self.indent());
+                } else {
+                    result.push(' ');
+                    let body_str = self.format(body);
+                    result.push_str(body_str.trim_start());
+                    result.push(' ');
+                }
+
+                result.push_str("done");
+                result
+            }
+            Node::Function { name, body } => {
+                let mut result = self.indent();
+                result.push_str("function ");
+                result.push_str(name);
+                result.push_str("()");
+
+                if self.config.function_next_line {
+                    result.push('\n');
+                    result.push_str(&self.indent());
+                    result.push('{');
+                } else {
+                    result.push_str(" {");
+                }
+
+                if !self.config.never_split {
+                    result.push('\n');
+
+                    // Format body with increased indent
+                    self.indent_level += 1;
+                    result.push_str(&self.format(body));
+                    self.indent_level -= 1;
+
+                    result.push('\n');
+                    result.push_str(&self.indent());
+                } else {
+                    result.push(' ');
+                    let body_str = self.format(body);
+                    result.push_str(body_str.trim_start());
+                    result.push(' ');
+                }
+
+                result.push('}');
+                result
+            }
             _ => "".to_string(),
         }
     }

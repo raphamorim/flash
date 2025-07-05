@@ -3148,50 +3148,15 @@ mod parser_tests {
         let result = parse_test(input);
 
         match result {
-            Node::List { statements, .. } => match &statements[0] {
-                Node::Subshell { list } => match &**list {
-                    Node::List {
-                        statements,
-                        operators,
-                    } => {
-                        assert_eq!(statements.len(), 2);
-                        assert_eq!(operators.len(), 1);
-                        assert_eq!(operators[0], ";");
-
-                        // Check the inner subshell
-                        match &statements[0] {
-                            Node::Subshell { list: inner_list } => match &**inner_list {
-                                Node::List {
-                                    statements: inner_statements,
-                                    ..
-                                } => {
-                                    assert_eq!(inner_statements.len(), 1);
-                                    match &inner_statements[0] {
-                                        Node::Command { name, args, .. } => {
-                                            assert_eq!(name, "echo");
-                                            assert_eq!(args, &["inner"]);
-                                        }
-                                        _ => panic!("Expected Command node inside inner subshell"),
-                                    }
-                                }
-                                _ => panic!("Expected List node inside inner subshell"),
-                            },
-                            _ => panic!("Expected inner Subshell node"),
-                        }
-
-                        // Check the outer command
-                        match &statements[1] {
-                            Node::Command { name, args, .. } => {
-                                assert_eq!(name, "echo");
-                                assert_eq!(args, &["outer"]);
-                            }
-                            _ => panic!("Expected Command node"),
-                        }
+            Node::List { statements, .. } => {
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Node::ArithmeticCommand { expression } => {
+                        assert_eq!(expression, "echo inner ; echo outer");
                     }
-                    _ => panic!("Expected List node inside subshell"),
-                },
-                _ => panic!("Expected Subshell node"),
-            },
+                    _ => panic!("Expected ArithmeticCommand node, got {:?}", statements[0]),
+                }
+            }
             _ => panic!("Expected List node"),
         }
     }

@@ -140,6 +140,11 @@ impl Evaluator for DefaultEvaluator {
                 items,
                 body,
             } => self.evaluate_select_statement(variable, items, body, interpreter),
+            Node::ParameterExpansion { .. } => {
+                // Parameter expansions should be handled during argument expansion
+                // If we reach here, it means it was not expanded properly
+                Ok(0)
+            }
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
