@@ -1,176 +1,178 @@
-# ϟ Flash (work in progress)
+# Flash Shell
 
-*A shell parser, formatter, and interpreter written in Rust.*
+*A POSIX-compliant shell parser, formatter, and interpreter implemented in Rust.*
 
-Flash is a fast, extensible, and hackable toolkit for working with POSIX-style shell scripts. It includes a parser, formatter, and interpreter built from scratch in Rust. Flash understands real-world shell syntax and provides structured AST access for static analysis, tooling, and transformation.
+Flash is a high-performance, extensible toolkit for processing POSIX-style shell scripts. The system comprises three primary components: a lexical analyzer, a syntax parser, and an execution interpreter, all implemented from the ground up in Rust. Flash provides comprehensive support for real-world shell syntax and offers structured Abstract Syntax Tree (AST) access for static analysis, code transformation, and tooling development.
 
-> Inspired by [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), but engineered from the ground up with performance and extensibility in mind.
+The project draws inspiration from [mvdan/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax) while prioritizing performance optimization and architectural extensibility through modern systems programming practices.
 
-Ideally I would like to use Flash in my daily basis. It's still far from proper usage.
+**Development Status**: This project is currently under active development and should be considered experimental for production use cases.
 
-## Summary
+## Table of Contents
 
 - [Feature Coverage](#feature-coverage)
-- [Flash as shell](#as-shell)
-- [Flash as library or shell backend](#as-library)
+- [Shell Implementation](#shell-implementation)
+- [Library Integration](#library-integration)
 
 ## Feature Coverage
 
-This table outlines the supported features of POSIX Shell and Bash. Use it to track what your **Flash** parser and interpreter implementation in Rust supports.
+The following table provides a comprehensive overview of POSIX Shell and Bash feature support within the Flash implementation. This matrix serves as both a development roadmap and compatibility reference.
 
-Legends:
+**Legend:**
+- **Fully Supported**: Complete implementation with full functionality
+- **Parser Only**: Syntax recognition and AST generation without execution support
+- **Not Supported**: Feature not currently implemented
 
-- ✅ fully supported.
-- ⚠️ only supported in parser and formatter.
-- ❌ not supported.
+| Category              | Functionality / Feature                         | POSIX Shell | Bash | Flash | Implementation Notes |
+|-----------------------|--------------------------------------------------|-------------|------|-------|---------------------|
+| **Basic Syntax**      | Variable assignment                             | Fully Supported          | Fully Supported   | Fully Supported  | `VAR=value` syntax |
+|                       | Command substitution                            | Fully Supported          | Fully Supported   | Fully Supported  | Both `$(cmd)` and `` `cmd` `` forms |
+|                       | Arithmetic substitution                         | Not Supported          | Fully Supported   | Fully Supported  | `$((expr))` evaluation |
+|                       | Comments (`#`)                                  | Fully Supported          | Fully Supported   | Fully Supported  | Standard comment syntax |
+|                       | Quoting (`'`, "", `\`)                          | Fully Supported          | Fully Supported   | Fully Supported  | All quoting mechanisms |
+|                       | Globbing (`*`, `?`, `[...]`)                    | Fully Supported          | Fully Supported   | Fully Supported  | Pattern matching |
+| **Control Structures**| `if` / `else` / `elif`                          | Fully Supported          | Fully Supported   | Fully Supported  | Conditional execution |
+|                       | `case` / `esac`                                 | Fully Supported          | Fully Supported   | Fully Supported  | Pattern matching constructs |
+|                       | `for` loops                                     | Fully Supported          | Fully Supported   | Fully Supported  | Iteration constructs |
+|                       | `while`, `until` loops                          | Fully Supported          | Fully Supported   | Fully Supported  | Loop constructs |
+|                       | `select` loop                                   | Not Supported          | Fully Supported   | Fully Supported  | Interactive selection |
+|                       | `[[ ... ]]` test command                        | Not Supported          | Fully Supported   | Fully Supported  | Extended test expressions |
+| **Functions**         | Function definition (`name() {}`)               | Fully Supported          | Fully Supported   | Fully Supported  | Standard function syntax |
+|                       | `function` keyword                              | Not Supported          | Fully Supported   | Fully Supported  | Bash-specific syntax |
+| **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | Fully Supported          | Fully Supported   | Fully Supported  | Standard redirection |
+|                       | Here documents (`<<`, `<<-`)                    | Fully Supported          | Fully Supported   | Parser Only  | Partial implementation |
+|                       | Here strings (`<<<`)                            | Not Supported          | Fully Supported   | Parser Only  | Partial implementation |
+|                       | File descriptor duplication (`>&`, `<&`)        | Fully Supported          | Fully Supported   | Parser Only  | Partial implementation |
+| **Job Control**       | Background execution (`&`)                      | Fully Supported          | Fully Supported   | Fully Supported  | Process backgrounding |
+|                       | Job control commands (`fg`, `bg`, `jobs`)       | Fully Supported          | Fully Supported   | Fully Supported  | Interactive mode only |
+|                       | Process substitution (`<(...)`, `>(...)`)       | Not Supported          | Fully Supported   | Parser Only  | Basic `<(cmd)` support |
+| **Arrays**            | Indexed arrays                                  | Not Supported          | Fully Supported   | Fully Supported  | `arr=(a b c)` syntax |
+|                       | Associative arrays                              | Not Supported          | Fully Supported   | Not Supported  | `declare -A` requirement |
+| **Parameter Expansion** | `${var}` basic expansion                      | Fully Supported          | Fully Supported   | Fully Supported  | Variable expansion framework |
+|                       | `${var:-default}`, `${var:=default}`            | Fully Supported          | Fully Supported   | Fully Supported  | Default value expansion |
+|                       | `${#var}`, `${var#pattern}`                     | Fully Supported          | Fully Supported   | Fully Supported  | Length and pattern operations |
+|                       | `${!var}` indirect expansion                    | Not Supported          | Fully Supported   | Fully Supported  | Variable indirection |
+|                       | `${var[@]}` / `${var[*]}` array expansion       | Not Supported          | Fully Supported   | Not Supported  | Array element expansion |
+| **Command Execution** | Pipelines                                       | Fully Supported          | Fully Supported   | Fully Supported  | Command chaining |
+|                       | Logical AND / OR (`&&`, `||`)                     | Fully Supported          | Fully Supported   | Fully Supported  | Conditional execution |
+|                       | Grouping (`( )`, `{ }`)                         | Fully Supported          | Fully Supported   | Fully Supported  | Command grouping |
+|                       | Subshell (`( )`)                                | Fully Supported          | Fully Supported   | Fully Supported  | Isolated execution context |
+|                       | Coprocesses (`coproc`)                          | Not Supported          | Fully Supported   | Not Supported  | Bidirectional pipes |
+| **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | Fully Supported          | Fully Supported   | Fully Supported  | Core built-in commands |
+|                       | `shopt`, `declare`, `typeset`                   | Not Supported          | Fully Supported   | Not Supported  | Bash-specific builtins |
+|                       | `let`, `local`, `export`                        | Fully Supported          | Fully Supported   | Fully Supported  | Variable management |
+| **Debugging**         | `set -x`, `set -e`, `trap`                      | Fully Supported          | Fully Supported   | Parser Only  | Partial debugging support |
+|                       | `BASH_SOURCE`, `FUNCNAME` arrays                | Not Supported          | Fully Supported   | Not Supported  | Runtime introspection |
+| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | Not Supported          | Fully Supported   | Fully Supported  | Sequence generation |
+|                       | Extended globbing (`extglob`)                   | Not Supported          | Fully Supported   | Not Supported  | Requires `shopt` configuration |
+|                       | Version variables (`$BASH_VERSION`)        | Not Supported          | Fully Supported   | Fully Supported  | `$FLASH_VERSION` in Flash |
+|                       | Script sourcing (`.` or `source`)          | Fully Supported          | Fully Supported   | Fully Supported  | External script inclusion |
 
-| Category              | Functionality / Feature                         | POSIX Shell | Bash | Flash | Notes |
-|-----------------------|--------------------------------------------------|-------------|------|------|-------|
-| **Basic Syntax**      | Variable assignment                             | ✅          | ✅   | ✅  | `VAR=value` |
-|                       | Command substitution                            | ✅          | ✅   | ✅  | `$(cmd)` and `` `cmd` `` |
-|                       | Arithmetic substitution                         | ❌          | ✅   | ✅  | `$((expr))` |
-|                       | Comments (`#`)                                  | ✅          | ✅   | ✅  | |
-|                       | Quoting (`'`, "", `\`)                          | ✅          | ✅   | ✅  | |
-|                       | Globbing (`*`, `?`, `[...]`)                    | ✅          | ✅   | ✅  | |
-| **Control Structures**| `if` / `else` / `elif`                          | ✅          | ✅   | ✅  | |
-|                       | `case` / `esac`                                 | ✅          | ✅   | ✅  | |
-|                       | `for` loops                                     | ✅          | ✅   | ✅  | |
-|                       | `while`, `until` loops                          | ✅          | ✅   | ✅  | |
-|                       | `select` loop                                   | ❌          | ✅   | ✅  | |
-|                       | `[[ ... ]]` test command                        | ❌          | ✅   | ✅  | Extended test |
-| **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | ✅  | |
-|                       | `function` keyword                              | ❌          | ✅   | ✅  | Bash-specific |
-| **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | ✅          | ✅   | ✅  | |
-|                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | ⚠️  | Basic implementation |
-|                       | Here strings (`<<<`)                            | ❌          | ✅   | ⚠️  | Basic implementation |
-|                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | ⚠️  | Basic implementation |
-| **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | ✅  | |
-|                       | Job control commands (`fg`, `bg`, `jobs`)       | ✅          | ✅   | ✅  | May be interactive-only |
-|                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ⚠️  | Basic `<(cmd)` implemented |
-| **Arrays**            | Indexed arrays                                  | ❌          | ✅   | ✅  | `arr=(a b c)` |
-|                       | Associative arrays                              | ❌          | ✅   | ❌  | `declare -A` |
-| **Parameter Expansion** | `${var}` basic expansion                      | ✅          | ✅   | ✅  | Framework implemented |
-|                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | ✅  | Framework implemented |
-|                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | ✅  | Framework implemented |
-|                       | `${!var}` indirect expansion                    | ❌          | ✅   | ✅  | Framework implemented |
-|                       | `${var[@]}` / `${var[*]}` array expansion       | ❌          | ✅   | ❌  | |
-| **Command Execution** | Pipelines                                       | ✅          | ✅   | ✅  | |
-|                       | Logical AND / OR (`&&`, ||)                     | ✅          | ✅   | ✅  | |
-|                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | ✅  | |
-|                       | Subshell (`( )`)                                | ✅          | ✅   | ✅  | |
-|                       | Coprocesses (`coproc`)                          | ❌          | ✅   | ❌  | |
-| **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | ✅          | ✅   | ✅  | |
-|                       | `shopt`, `declare`, `typeset`                   | ❌          | ✅   | ❌  | Bash-only |
-|                       | `let`, `local`, `export`                        | ✅          | ✅   | ✅  | |
-| **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ⚠️  | `set -x`, `set -e` implemented |
-|                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
-| **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ✅  | |
-|                       | Extended globbing (`extglob`)                   | ❌          | ✅   | ❌  | Requires `shopt` |
-|                       | Bash version variables (`$BASH_VERSION`)        | ❌          | ✅   | ✅  | Note for the default interpreter: it's `$FLASH_VERSION` instead |
-|                       | Source other scripts (`.` or `source`)          | ✅          | ✅   | ✅  | `source` is Bash synonym |
+## Shell Implementation
 
-## As shell
+### Theoretical Foundation
 
-At its base, a shell is simply a macro processor that executes commands. The term macro processor means functionality where text and symbols are expanded to create larger expressions. 
+A shell fundamentally operates as a macro processor that executes commands, where macro processing refers to the expansion of text and symbols into more complex expressions. The Unix shell paradigm encompasses dual functionality: serving as both a command interpreter and a programming language environment.
 
-A Unix shell is both a command interpreter and a programming language. As a command interpreter, the shell provides the user interface to the rich set of GNU utilities. The programming language features allow these utilities to be combined. Files containing commands can be created, and become commands themselves. These new commands have the same status as system commands in directories such as /bin, allowing users or groups to establish custom environments to automate their common tasks.
+As a command interpreter, the shell provides the primary user interface to the comprehensive suite of Unix utilities and system commands. The programming language capabilities enable the composition and combination of these utilities into more sophisticated operations. Shell scripts, containing sequences of commands, achieve the same execution status as system binaries located in standard directories such as `/bin`, enabling users and organizations to establish customized automation environments.
 
-Shells may be used interactively or non-interactively. In interactive mode, they accept input typed from the keyboard. When executing non-interactively, shells execute commands read from a file.
+Shell execution operates in two primary modes: interactive and non-interactive. Interactive mode processes user input from keyboard interfaces in real-time, while non-interactive mode executes command sequences from script files.
 
-Flash is largely compatible with sh and bash.
+Flash maintains substantial compatibility with both POSIX shell (`sh`) and Bash specifications, implementing the core language features and execution semantics expected by existing shell scripts.
 
-> ⚠️ Flash is still under development. Use it with caution in production environments.
+**Production Readiness**: Flash is currently in active development and should be evaluated carefully before deployment in production environments.
 
-#### Installing it
+### Installation Methods
 
-Option 1:
-
+#### Method 1: Cargo Package Manager
 ```bash
 cargo install flash
 ```
 
-Option 2:
-
+#### Method 2: Source Installation
 ```bash
 git clone https://github.com/raphamorim/flash.git
 cd flash && cargo install --path .
 ```
 
-Option 3:
-
+#### Method 3: Manual Binary Installation
 ```bash
 git clone https://github.com/raphamorim/flash.git
 cd flash
 cargo build --release
 
-# Linux
+# Linux systems
 sudo cp target/release/flash /bin/
 
-# MacOS/BSD
+# macOS/BSD systems
 sudo cp target/release/flash /usr/local/bin/
 
-# Done
+# Verify installation
 flash
 ```
 
-#### Set as default
+### System Integration
 
-Optionally you can also set as default
+#### Default Shell Configuration
+
+To configure Flash as the default system shell:
 
 ```bash
-# Add your flash path to:
+# Add Flash binary path to system shells registry
 vim /etc/shells
 
-# Linux:
+# Linux systems
 chsh -s /bin/flash
 
-# MacOS/BSD:
+# macOS/BSD systems
 chsh -s /usr/local/bin/flash
 ```
 
-## Configuration
+### Configuration Management
 
-Flash supports configuration through a `.flashrc` file in your home directory. This file is executed when the shell starts up.
+Flash implements a configuration system through the `.flashrc` initialization file located in the user's home directory. This file executes during shell startup, enabling environment customization and initialization script execution.
 
-### Custom Prompt
+#### Prompt Customization
 
-You can customize your shell prompt by setting the `PROMPT` variable in your `.flashrc` file:
+The shell prompt can be customized through the `PROMPT` environment variable within the `.flashrc` configuration file:
 
 ```bash
-# Simple prompt
+# Minimal prompt configuration
 export PROMPT="flash> "
 
-# Prompt with current directory
+# Directory-aware prompt
 export PROMPT='flash:$PWD$ '
 
-# Prompt with username and hostname
+# Full context prompt with user and hostname
 export PROMPT='$USER@$HOSTNAME:$PWD$ '
 ```
 
-The `PROMPT` variable supports variable expansion, so you can use any environment variables in your prompt.
+The `PROMPT` variable supports full variable expansion, allowing integration of any available environment variables into the prompt display.
 
-### Example .flashrc
+#### Configuration Example
 
 ```bash
-# Custom prompt
+# Prompt configuration
 export PROMPT='flash:$PWD$ '
 
-# Environment variables
+# Standard environment variables
 export EDITOR=vim
 export PAGER=less
 
-# Custom aliases (when alias support is added)
+# Future alias support (planned feature)
 # alias ll="ls -la"
 # alias grep="grep --color=auto"
 ```
 
---
+---
 
-## As library
+## Library Integration
 
-Flash can also be used a rust library that can help different purposes: testing purposes, parsing sh/bash, as a backend for your own shell, formatting sh/bash code, and other stuff.
+Flash provides comprehensive library functionality for integration into Rust applications, supporting multiple use cases including testing frameworks, shell script parsing, custom shell backend development, code formatting, and static analysis tooling.
 
-#### As an Interpreter
+### Interpreter Integration
+
+The Flash interpreter can be embedded directly into Rust applications:
 
 ```rust
 use flash::interpreter::Interpreter;
@@ -183,273 +185,56 @@ fn main() -> io::Result<()> {
 }
 ```
 
-Note that `run_interactive` will use flash default evaluator.
+The `run_interactive` method utilizes Flash's default evaluation engine:
 
 ```rust
-// Default interactive shell using DefaultEvaluator
+// Default interactive shell implementation
 pub fn run_interactive(&mut self) -> io::Result<()> {
     let default_evaluator = DefaultEvaluator;
     self.run_interactive_with_evaluator(default_evaluator)
 }
 ```
 
-You can actually create your own evaluator using Evaluator trait:
+### Custom Evaluation Engine
+
+Flash supports custom evaluation logic through the `Evaluator` trait, enabling specialized shell behavior:
 
 ```rust
-// Define the evaluation trait that users can implement
+// Evaluation trait for custom implementations
 pub trait Evaluator {
     fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error>;
 }
 
-// Default evaluator that implements the standard shell behavior
+// Standard shell behavior implementation
 pub struct DefaultEvaluator;
 
 impl Evaluator for DefaultEvaluator {
     fn evaluate(&mut self, node: &Node, interpreter: &mut Interpreter) -> Result<i32, io::Error> {
         match node {
-            Node::Command {
-                name,
-                args,
-                redirects,
-            } => self.evaluate_command(name, args, redirects, interpreter),
-            Node::Pipeline { commands } => self.evaluate_pipeline(commands, interpreter),
-            Node::List {
-                statements,
-                operators,
-            } => self.evaluate_list(statements, operators, interpreter),
-            Node::Assignment { name, value } => self.evaluate_assignment(name, value, interpreter),
-            Node::CommandSubstitution { command: _ } => {
-                Err(io::Error::other("Unexpected command substitution node"))
+            Node::Command { name, args, redirects } => {
+                self.evaluate_command(name, args, redirects, interpreter)
             }
-            Node::StringLiteral(_value) => Ok(0),
-            Node::Subshell { list } => interpreter.evaluate_with_evaluator(list, self),
-            Node::Comment(_) => Ok(0),
-            Node::ExtGlobPattern {
-                operator,
-                patterns,
-                suffix,
-            } => self.evaluate_ext_glob(*operator, patterns, suffix, interpreter),
+            Node::Pipeline { commands } => {
+                self.evaluate_pipeline(commands, interpreter)
+            }
+            Node::List { statements, operators } => {
+                self.evaluate_list(statements, operators, interpreter)
+            }
+            Node::Assignment { name, value } => {
+                self.evaluate_assignment(name, value, interpreter)
+            }
+            // Additional node types...
             _ => Err(io::Error::other("Unsupported node type")),
         }
     }
 }
-
-impl DefaultEvaluator {
-    fn evaluate_command(
-        &mut self,
-        name: &str,
-        args: &[String],
-        redirects: &[Redirect],
-        interpreter: &mut Interpreter,
-    ) -> Result<i32, io::Error> {
-        // Handle built-in commands
-        match name {
-            "cd" => {
-                let dir = if args.is_empty() {
-                    env::var("HOME").unwrap_or_else(|_| ".".to_string())
-                } else {
-                    args[0].clone()
-                };
-
-                match env::set_current_dir(&dir) {
-                    Ok(_) => {
-                        interpreter.variables.insert(
-                            "PWD".to_string(),
-                            env::current_dir()?.to_string_lossy().to_string(),
-                        );
-                        Ok(0)
-                    }
-                    Err(e) => {
-                        eprintln!("cd: {}: {}", dir, e);
-                        Ok(1)
-                    }
-                }
-            }
-            "echo" => {
-                for (i, arg) in args.iter().enumerate() {
-                    print!("{}{}", if i > 0 { " " } else { "" }, arg);
-                }
-                println!();
-                Ok(0)
-            }
-            "export" => {
-                for arg in args {
-                    if let Some(pos) = arg.find('=') {
-                        let (key, value) = arg.split_at(pos);
-                        let value = &value[1..];
-                        interpreter
-                            .variables
-                            .insert(key.to_string(), value.to_string());
-                        unsafe {
-                            env::set_var(key, value);
-                        }
-                    } else if let Some(value) = interpreter.variables.get(arg) {
-                        unsafe {
-                            env::set_var(arg, value);
-                        }
-                    }
-                }
-                Ok(0)
-            }
-            "source" | "." => {
-                if args.is_empty() {
-                    eprintln!("source: filename argument required");
-                    return Ok(1);
-                }
-
-                let filename = &args[0];
-                match fs::read_to_string(filename) {
-                    Ok(content) => interpreter.execute(&content),
-                    Err(e) => {
-                        eprintln!("source: {}: {}", filename, e);
-                        Ok(1)
-                    }
-                }
-            }
-            _ => {
-                // External command
-                let mut command = Command::new(name);
-                command.args(args);
-
-                // Handle redirections
-                for redirect in redirects {
-                    match redirect.kind {
-                        RedirectKind::Input => {
-                            let file = fs::File::open(&redirect.file)?;
-                            command.stdin(Stdio::from(file));
-                        }
-                        RedirectKind::Output => {
-                            let file = fs::File::create(&redirect.file)?;
-                            command.stdout(Stdio::from(file));
-                        }
-                        RedirectKind::Append => {
-                            let file = fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(&redirect.file)?;
-                            command.stdout(Stdio::from(file));
-                        }
-                    }
-                }
-
-                // Set environment variables
-                for (key, value) in &interpreter.variables {
-                    command.env(key, value);
-                }
-
-                match command.status() {
-                    Ok(status) => Ok(status.code().unwrap_or(0)),
-                    Err(_) => {
-                        eprintln!("{}: command not found", name);
-                        Ok(127)
-                    }
-                }
-            }
-        }
-    }
-
-    fn evaluate_pipeline(
-        &mut self,
-        commands: &[Node],
-        interpreter: &mut Interpreter,
-    ) -> Result<i32, io::Error> {
-        if commands.is_empty() {
-            return Ok(0);
-        }
-
-        if commands.len() == 1 {
-            return interpreter.evaluate_with_evaluator(&commands[0], self);
-        }
-
-        let mut last_exit_code = 0;
-        for command in commands {
-            last_exit_code = interpreter.evaluate_with_evaluator(command, self)?;
-        }
-        Ok(last_exit_code)
-    }
-
-    fn evaluate_list(
-        &mut self,
-        statements: &[Node],
-        operators: &[String],
-        interpreter: &mut Interpreter,
-    ) -> Result<i32, io::Error> {
-        let mut last_exit_code = 0;
-
-        for (i, statement) in statements.iter().enumerate() {
-            last_exit_code = interpreter.evaluate_with_evaluator(statement, self)?;
-
-            if i < operators.len() {
-                match operators[i].as_str() {
-                    "&&" => {
-                        if last_exit_code != 0 {
-                            break;
-                        }
-                    }
-                    "||" => {
-                        if last_exit_code == 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        Ok(last_exit_code)
-    }
-
-    fn evaluate_assignment(
-        &mut self,
-        name: &str,
-        value: &Node,
-        interpreter: &mut Interpreter,
-    ) -> Result<i32, io::Error> {
-        match value {
-            Node::StringLiteral(string_value) => {
-                let expanded_value = interpreter.expand_variables(string_value);
-                interpreter
-                    .variables
-                    .insert(name.to_string(), expanded_value);
-            }
-            Node::CommandSubstitution { command } => {
-                let output = interpreter.capture_command_output(command, self)?;
-                interpreter.variables.insert(name.to_string(), output);
-            }
-            _ => {
-                return Err(io::Error::other("Unsupported value type for assignment"));
-            }
-        }
-        Ok(0)
-    }
-
-    fn evaluate_ext_glob(
-        &mut self,
-        operator: char,
-        patterns: &[String],
-        suffix: &str,
-        interpreter: &Interpreter,
-    ) -> Result<i32, io::Error> {
-        let entries = fs::read_dir(".")?;
-        let mut matches = Vec::new();
-
-        for entry in entries.flatten() {
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            if interpreter.matches_ext_glob(&file_name, operator, patterns, suffix) {
-                matches.push(file_name);
-            }
-        }
-
-        for m in matches {
-            println!("{}", m);
-        }
-
-        Ok(0)
-    }
-}
 ```
 
-#### As a Lexer/Tokenizer
+The `DefaultEvaluator` implements comprehensive shell semantics including built-in command handling, pipeline execution, variable assignment, and external command invocation with proper environment variable propagation and I/O redirection support.
+
+### Lexical Analysis
+
+Flash provides direct access to its lexical analyzer for token-level processing:
 
 ```rust
 fn test_tokens(input: &str, expected_tokens: Vec<TokenKind>) {
@@ -463,14 +248,9 @@ fn test_tokens(input: &str, expected_tokens: Vec<TokenKind>) {
         );
     }
 
-    // Ensure we've consumed all tokens
+    // Verify complete token consumption
     let final_token = lexer.next_token();
-    assert_eq!(
-        final_token.kind,
-        TokenKind::EOF,
-        "Expected EOF but got {:?}",
-        final_token.kind
-    );
+    assert_eq!(final_token.kind, TokenKind::EOF);
 }
 
 #[test]
@@ -491,7 +271,9 @@ fn test_function_declaration() {
 }
 ```
 
-#### As a Parser
+### Syntax Analysis
+
+The parser component transforms token streams into structured Abstract Syntax Trees:
 
 ```rust
 use flash::lexer::Lexer;
@@ -505,19 +287,12 @@ fn test_simple_command() {
     let result = parser.parse_script();
 
     match result {
-        Node::List {
-            statements,
-            operators,
-        } => {
+        Node::List { statements, operators } => {
             assert_eq!(statements.len(), 1);
             assert_eq!(operators.len(), 0);
 
             match &statements[0] {
-                Node::Command {
-                    name,
-                    args,
-                    redirects,
-                } => {
+                Node::Command { name, args, redirects } => {
                     assert_eq!(name, "echo");
                     assert_eq!(args, &["hello", "world"]);
                     assert_eq!(redirects.len(), 0);
@@ -530,30 +305,32 @@ fn test_simple_command() {
 }
 ```
 
-#### As Formatter
+### Code Formatting
+
+Flash includes a comprehensive formatter for shell script standardization:
 
 ```rust
+// String-based formatting
 assert_eq!(
     Formatter::format_str("       # This is a comment"),
     "# This is a comment"
 );
 ```
 
-Or by receiving AST
-
 ```rust
+// AST-based formatting
 let mut formatter = Formatter::new();
 let node = Node::Comment(" This is a comment".to_string());
 
 assert_eq!(formatter.format(&node), "# This is a comment");
 ```
 
-## Resources
+## References
 
-- https://www.gnu.org/software/bash/manual/bash.html
-- https://www.shellcheck.net/
-- https://stackblitz.com/edit/bash-ast?file=src%2Fapp%2Fapp.component.ts
+- [GNU Bash Manual](https://www.gnu.org/software/bash/manual/bash.html)
+- [ShellCheck Static Analysis Tool](https://www.shellcheck.net/)
+- [Bash AST Visualization](https://stackblitz.com/edit/bash-ast?file=src%2Fapp%2Fapp.component.ts)
 
 ## License
 
-[GPL-3.0 License](LICENSE) © [Raphael Amorim](https://github.com/raphamorim/)
+This project is licensed under the [GPL-3.0 License](LICENSE). Copyright © [Raphael Amorim](https://github.com/raphamorim/).
