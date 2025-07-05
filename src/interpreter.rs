@@ -72,6 +72,9 @@ impl Evaluator for DefaultEvaluator {
             Node::ArithmeticExpansion { expression } => {
                 self.evaluate_arithmetic_expansion(expression, interpreter)
             }
+            Node::ArithmeticCommand { expression } => {
+                self.evaluate_arithmetic_command(expression, interpreter)
+            }
             Node::StringLiteral(_value) => Ok(0),
             Node::SingleQuotedString(_value) => Ok(0),
             Node::Subshell { list } => interpreter.evaluate_with_evaluator(list, self),
@@ -228,6 +231,19 @@ impl DefaultEvaluator {
                             Err(_) => {
                                 eprintln!(
                                     "arithmetic expansion: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                0
+                            }
+                        }
+                    }
+                    Node::ArithmeticCommand { expression } => {
+                        let expanded_expr = interpreter.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => result as i32,
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic command: invalid expression: {}",
                                     expanded_expr
                                 );
                                 0
@@ -684,6 +700,36 @@ impl DefaultEvaluator {
                             }
                         }
                     }
+                    Node::ArithmeticCommand { expression } => {
+                        let expanded_expr = interpreter.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => {
+                                let result_str = result.to_string();
+                                interpreter
+                                    .variables
+                                    .insert(name.to_string(), result_str.clone());
+                                if !name.is_empty() {
+                                    unsafe {
+                                        env::set_var(name, &result_str);
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic command: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                interpreter
+                                    .variables
+                                    .insert(name.to_string(), "0".to_string());
+                                if !name.is_empty() {
+                                    unsafe {
+                                        env::set_var(name, "0");
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Node::Array { elements } => {
                         // Handle array export - join elements with spaces or use a specific format
                         let array_value = elements.join(" ");
@@ -835,6 +881,25 @@ impl DefaultEvaluator {
                     Err(_) => {
                         eprintln!(
                             "arithmetic expansion: invalid expression: {}",
+                            expanded_expr
+                        );
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), "0".to_string());
+                    }
+                }
+            }
+            Node::ArithmeticCommand { expression } => {
+                let expanded_expr = interpreter.expand_variables(expression);
+                match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                    Ok(result) => {
+                        interpreter
+                            .variables
+                            .insert(name.to_string(), result.to_string());
+                    }
+                    Err(_) => {
+                        eprintln!(
+                            "arithmetic command: invalid expression: {}",
                             expanded_expr
                         );
                         interpreter
@@ -1225,7 +1290,7 @@ impl DefaultEvaluator {
         let expanded_expr = interpreter.expand_variables(expression);
 
         // Evaluate the arithmetic expression
-        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+        match self.evaluate_arithmetic_expression_with_assignment(&expanded_expr, interpreter) {
             Ok(_result) => {
                 // For arithmetic expansion, we typically return 0 for success
                 // The actual result is used as a value, not an exit code
@@ -1241,9 +1306,38 @@ impl DefaultEvaluator {
         }
     }
 
-    pub fn evaluate_arithmetic_expression(expr: &str) -> Result<i64, String> {
-        // Simple arithmetic expression evaluator
-        // This is a basic implementation that handles +, -, *, /, %, and parentheses
+    fn evaluate_arithmetic_command(
+        &mut self,
+        expression: &str,
+        interpreter: &mut Interpreter,
+    ) -> Result<i32, io::Error> {
+        // Expand variables in the expression first
+        let expanded_expr = interpreter.expand_variables(expression);
+
+        // Evaluate the arithmetic expression
+        match self.evaluate_arithmetic_expression_with_assignment(&expanded_expr, interpreter) {
+            Ok(result) => {
+                // For arithmetic commands, the exit code is based on the result
+                // Non-zero result means success (exit code 0), zero result means failure (exit code 1)
+                if result != 0 {
+                    Ok(0) // Success
+                } else {
+                    Ok(1) // Failure
+                }
+            }
+            Err(_) => {
+                eprintln!(
+                    "arithmetic command: invalid expression: {}",
+                    expanded_expr
+                );
+                Ok(1)
+            }
+        }
+    }
+
+    pub fn evaluate_arithmetic_expression_with_assignment(&mut self, expr: &str, interpreter: &mut Interpreter) -> Result<i64, String> {
+        // Enhanced arithmetic expression evaluator that can handle assignments
+        // Handles +, -, *, /, %, comparison operators, logical operators, assignments, and parentheses
 
         let expr = expr.trim();
         if expr.is_empty() {
@@ -1266,10 +1360,283 @@ impl DefaultEvaluator {
             return Ok(0);
         }
 
-        // Handle basic binary operations
-        // Look for operators from lowest to highest precedence
+        // Handle assignment operators first (lowest precedence)
+        if let Some(pos) = expr.rfind('=') {
+            // Make sure it's not part of == or != or >= or <=
+            if pos > 0 && pos + 1 < expr.len() {
+                let prev_char = expr.chars().nth(pos - 1);
+                let next_char = expr.chars().nth(pos + 1);
+                if prev_char != Some('!') && prev_char != Some('<') && prev_char != Some('>') && prev_char != Some('=') && next_char != Some('=') {
+                    // This is an assignment, not a comparison
+                    let left = expr[..pos].trim();
+                    let right = expr[pos + 1..].trim();
+                    let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                    
+                    // Extract variable name from left side (remove $ if present)
+                    let var_name = if left.starts_with('$') {
+                        &left[1..]
+                    } else {
+                        left
+                    };
+                    
+                    // Set the variable
+                    interpreter.variables.insert(var_name.to_string(), right_val.to_string());
+                    return Ok(right_val);
+                }
+            }
+        }
 
-        // Addition and subtraction (lowest precedence)
+        // Handle logical operators (next lowest precedence)
+        if let Some(pos) = expr.rfind("||") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("&&") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 });
+        }
+
+        // Handle comparison operators
+        if let Some(pos) = expr.rfind("<=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val <= right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind(">=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val >= right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("!=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val != right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("==") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val == right_val { 1 } else { 0 });
+        }
+
+        // Handle single character comparison operators (be careful with order)
+        if let Some(pos) = expr.rfind('<') {
+            // Make sure it's not part of <= or <<
+            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('<')) {
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
+                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                return Ok(if left_val < right_val { 1 } else { 0 });
+            }
+        }
+
+        if let Some(pos) = expr.rfind('>') {
+            // Make sure it's not part of >= or >>
+            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('>')) {
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
+                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                return Ok(if left_val > right_val { 1 } else { 0 });
+            }
+        }
+
+        // Addition and subtraction
+        if let Some(pos) = expr.rfind('+') {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(left_val + right_val);
+        }
+
+        if let Some(pos) = expr.rfind('-') {
+            // Make sure it's not a negative number at the start
+            if pos > 0 {
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
+                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                return Ok(left_val - right_val);
+            }
+        }
+
+        // Multiplication, division, and modulo (higher precedence)
+        if let Some(pos) = expr.rfind('*') {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(left_val * right_val);
+        }
+
+        if let Some(pos) = expr.rfind('/') {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            if right_val == 0 {
+                return Err("division by zero".to_string());
+            }
+            return Ok(left_val / right_val);
+        }
+
+        if let Some(pos) = expr.rfind('%') {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 1..].trim();
+            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            if right_val == 0 {
+                return Err("division by zero".to_string());
+            }
+            return Ok(left_val % right_val);
+        }
+
+        // Handle parentheses
+        if expr.starts_with('(') && expr.ends_with(')') {
+            let inner = &expr[1..expr.len() - 1];
+            return self.evaluate_arithmetic_expression_with_assignment(inner, interpreter);
+        }
+
+        // If we can't parse it, return an error
+        Err(format!("invalid arithmetic expression: {}", expr))
+    }
+
+    pub fn evaluate_arithmetic_expression(expr: &str) -> Result<i64, String> {
+        // Enhanced arithmetic expression evaluator
+        // Handles +, -, *, /, %, comparison operators, logical operators, and parentheses
+
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return Ok(0);
+        }
+
+        // Remove any trailing ')' that might be left from parsing issues
+        let expr = expr.trim_end_matches(')');
+
+        // Handle simple number
+        if let Ok(num) = expr.parse::<i64>() {
+            return Ok(num);
+        }
+
+        // Handle variable names (should be already expanded by expand_variables)
+        // If it's a single word that's not a number, treat it as 0 (unset variable)
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            // This should not happen if variables are properly expanded
+            // But if it does, treat as 0
+            return Ok(0);
+        }
+
+        // Handle logical operators (lowest precedence)
+        if let Some(pos) = expr.rfind("||") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("&&") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 });
+        }
+
+        // Handle comparison operators
+        if let Some(pos) = expr.rfind("<=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val <= right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind(">=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val >= right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("!=") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val != right_val { 1 } else { 0 });
+        }
+
+        if let Some(pos) = expr.rfind("==") {
+            let left = expr[..pos].trim();
+            let right = expr[pos + 2..].trim();
+            let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+            let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+            return Ok(if left_val == right_val { 1 } else { 0 });
+        }
+
+        // Handle single character comparison operators (be careful with order)
+        if let Some(pos) = expr.rfind('<') {
+            // Make sure it's not part of <= or <<
+            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('<')) {
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
+                let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+                let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+                return Ok(if left_val < right_val { 1 } else { 0 });
+            }
+        }
+
+        if let Some(pos) = expr.rfind('>') {
+            // Make sure it's not part of >= or >>
+            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('>')) {
+                let left = expr[..pos].trim();
+                let right = expr[pos + 1..].trim();
+                let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
+                let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+                return Ok(if left_val > right_val { 1 } else { 0 });
+            }
+        }
+
+        // Handle assignment operators
+        if let Some(pos) = expr.rfind('=') {
+            // Make sure it's not part of == or != or >= or <=
+            if pos > 0 && pos + 1 < expr.len() {
+                let prev_char = expr.chars().nth(pos - 1);
+                let next_char = expr.chars().nth(pos + 1);
+                if prev_char != Some('!') && prev_char != Some('<') && prev_char != Some('>') && next_char != Some('=') {
+                    // This is an assignment, not a comparison
+                    let _left = expr[..pos].trim();
+                    let right = expr[pos + 1..].trim();
+                    let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
+                    // For now, just return the right value
+                    // TODO: Actually assign to the variable
+                    return Ok(right_val);
+                }
+            }
+        }
+
+        // Addition and subtraction
         if let Some(pos) = expr.rfind('+') {
             let left = expr[..pos].trim();
             let right = expr[pos + 1..].trim();
@@ -3061,6 +3428,24 @@ impl Interpreter {
                             }
                         }
                     }
+                    Node::ArithmeticCommand { expression } => {
+                        let expanded_expr = self.expand_variables(expression);
+                        match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_expr) {
+                            Ok(result) => {
+                                let result_str = result.to_string();
+                                self.variables.insert(name.clone(), result_str.clone());
+                                Ok(result_str)
+                            }
+                            Err(_) => {
+                                eprintln!(
+                                    "arithmetic command: invalid expression: {}",
+                                    expanded_expr
+                                );
+                                self.variables.insert(name.clone(), "0".to_string());
+                                Ok("0".to_string())
+                            }
+                        }
+                    }
                     _ => Ok(String::new()),
                 }
             }
@@ -3073,6 +3458,115 @@ impl Interpreter {
                 Ok(String::new())
             }
         }
+    }
+
+    // Method to evaluate arithmetic expressions with variable access
+    fn evaluate_arithmetic_with_variables(&self, expr: &str) -> Result<i64, String> {
+        // This method handles arithmetic expressions with variables and nested arithmetic expansions
+        
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return Ok(0);
+        }
+
+        // Handle simple number
+        if let Ok(num) = expr.parse::<i64>() {
+            return Ok(num);
+        }
+
+        // Handle simple variable name
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            // This is a variable name, look it up
+            if let Some(value) = self.variables.get(expr) {
+                if let Ok(num) = value.parse::<i64>() {
+                    return Ok(num);
+                }
+            }
+            return Ok(0); // Unset variable defaults to 0
+        }
+
+        // First, expand any nested arithmetic expressions $((...)
+        let expanded_expr = self.expand_nested_arithmetic(expr)?;
+        
+        // Then expand variables in the result
+        let mut final_expr = String::new();
+        let mut chars = expanded_expr.chars().peekable();
+        
+        while let Some(c) = chars.next() {
+            if c.is_alphabetic() || c == '_' {
+                // This might be a variable name
+                let mut var_name = String::new();
+                var_name.push(c);
+                
+                // Collect the rest of the variable name
+                while let Some(&next_c) = chars.peek() {
+                    if next_c.is_alphanumeric() || next_c == '_' {
+                        var_name.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Look up the variable
+                if let Some(value) = self.variables.get(&var_name) {
+                    final_expr.push_str(value);
+                } else {
+                    final_expr.push('0'); // Unset variable defaults to 0
+                }
+            } else {
+                final_expr.push(c);
+            }
+        }
+        
+        // Now evaluate the fully expanded expression using the static method
+        DefaultEvaluator::evaluate_arithmetic_expression(&final_expr)
+    }
+
+    // Helper method to expand nested arithmetic expressions $((...)
+    fn expand_nested_arithmetic(&self, expr: &str) -> Result<String, String> {
+        let mut result = String::new();
+        let mut chars = expr.chars().peekable();
+        
+        while let Some(c) = chars.next() {
+            if c == '$' && chars.peek() == Some(&'(') {
+                chars.next(); // consume '('
+                if chars.peek() == Some(&'(') {
+                    chars.next(); // consume second '('
+                    
+                    // Find the matching closing parentheses
+                    let mut paren_count = 2;
+                    let mut nested_expr = String::new();
+                    
+                    while paren_count > 0 {
+                        if let Some(ch) = chars.next() {
+                            if ch == '(' {
+                                paren_count += 1;
+                            } else if ch == ')' {
+                                paren_count -= 1;
+                            }
+                            
+                            if paren_count > 0 {
+                                nested_expr.push(ch);
+                            }
+                        } else {
+                            return Err("Unmatched parentheses in arithmetic expression".to_string());
+                        }
+                    }
+                    
+                    // Recursively evaluate the nested expression
+                    let nested_result = self.evaluate_arithmetic_with_variables(&nested_expr)?;
+                    result.push_str(&nested_result.to_string());
+                } else {
+                    // Not an arithmetic expansion, put back the characters
+                    result.push('$');
+                    result.push('(');
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        
+        Ok(result)
     }
 
     fn expand_variables(&self, input: &str) -> String {
@@ -3121,8 +3615,7 @@ impl Interpreter {
 
                         // Evaluate the arithmetic expression
                         if !arith_content.is_empty() {
-                            let expanded_arith = self.expand_variables(&arith_content);
-                            match DefaultEvaluator::evaluate_arithmetic_expression(&expanded_arith)
+                            match self.evaluate_arithmetic_with_variables(&arith_content)
                             {
                                 Ok(arith_result) => {
                                     result.push_str(&arith_result.to_string());
@@ -3130,7 +3623,7 @@ impl Interpreter {
                                 Err(_) => {
                                     eprintln!(
                                         "arithmetic expansion: invalid expression: {}",
-                                        expanded_arith
+                                        arith_content
                                     );
                                     result.push('0');
                                 }

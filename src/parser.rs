@@ -35,6 +35,9 @@ pub enum Node {
     ArithmeticExpansion {
         expression: String,
     },
+    ArithmeticCommand {
+        expression: String,
+    },
     Subshell {
         list: Box<Node>,
     },
@@ -337,6 +340,7 @@ impl Parser {
             TokenKind::Elif => Some(self.parse_elif_branch()),
             TokenKind::Else => Some(self.parse_else_branch()),
             TokenKind::LParen => Some(self.parse_subshell()),
+            TokenKind::ArithCommand => Some(self.parse_arithmetic_command()),
             TokenKind::Comment => {
                 let comment = self.current_token.value.clone();
                 self.next_token();
@@ -2010,6 +2014,193 @@ impl Parser {
         }
 
         Node::ArithmeticExpansion {
+            expression: expression.trim().to_string(),
+        }
+    }
+
+    pub fn parse_arithmetic_command(&mut self) -> Node {
+        self.next_token(); // Skip '(('
+
+        let mut expression = String::new();
+        let mut paren_count = 2; // We start with 2 open parentheses
+
+        // Read until we find the matching closing parentheses
+        while paren_count > 0 && self.current_token.kind != TokenKind::EOF {
+            match &self.current_token.kind {
+                TokenKind::LParen => {
+                    paren_count += 1;
+                    expression.push('(');
+                    self.next_token();
+                }
+                TokenKind::RParen => {
+                    paren_count -= 1;
+                    // Only add ')' to expression if it's not part of the closing '))'
+                    if paren_count > 1 {
+                        expression.push(')');
+                    }
+                    self.next_token();
+                }
+                TokenKind::Word(word) => {
+                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                        expression.push(' ');
+                    }
+                    expression.push_str(word);
+                    self.next_token();
+                }
+                TokenKind::Dollar => {
+                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                        expression.push(' ');
+                    }
+                    expression.push('$');
+                    self.next_token();
+                    
+                    // Handle the variable name that follows the $
+                    match &self.current_token.kind {
+                        TokenKind::Word(word) => {
+                            expression.push_str(word);
+                            self.next_token();
+                        }
+                        TokenKind::LBrace => {
+                            // Handle ${var} syntax
+                            expression.push('{');
+                            self.next_token();
+                            if let TokenKind::Word(word) = &self.current_token.kind {
+                                expression.push_str(word);
+                                self.next_token();
+                            }
+                            if self.current_token.kind == TokenKind::RBrace {
+                                expression.push('}');
+                                self.next_token();
+                            }
+                        }
+                        _ => {
+                            // Just $ by itself, which is valid
+                        }
+                    }
+                }
+                TokenKind::Assignment => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
+                    expression.push('=');
+                    self.next_token();
+                    
+                    // Check if the next token is also Assignment to handle ==
+                    if self.current_token.kind == TokenKind::Assignment {
+                        expression.push('=');
+                        self.next_token();
+                    }
+                }
+                TokenKind::Less => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
+                    expression.push('<');
+                    self.next_token();
+                    
+                    // Check if the next token is Assignment to handle <=
+                    if self.current_token.kind == TokenKind::Assignment {
+                        expression.push('=');
+                        self.next_token();
+                    }
+                }
+                TokenKind::Great => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
+                    expression.push('>');
+                    self.next_token();
+                    
+                    // Check if the next token is Assignment to handle >=
+                    if self.current_token.kind == TokenKind::Assignment {
+                        expression.push('=');
+                        self.next_token();
+                    }
+                }
+                TokenKind::And => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
+                    expression.push_str("&&");
+                    self.next_token();
+                }
+                TokenKind::Or => {
+                    if !expression.is_empty() && !expression.ends_with(' ') {
+                        expression.push(' ');
+                    }
+                    expression.push_str("||");
+                    self.next_token();
+                }
+                TokenKind::ArithSubst => {
+                    // Handle nested arithmetic substitution $((
+                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                        expression.push(' ');
+                    }
+                    expression.push_str("$((");
+                    self.next_token();
+                    
+                    // Parse the nested arithmetic content until we find the matching ))
+                    let mut nested_paren_count = 2; // We start with 2 open parentheses from $((
+                    
+                    while nested_paren_count > 0 && self.current_token.kind != TokenKind::EOF {
+                        match &self.current_token.kind {
+                            TokenKind::LParen => {
+                                nested_paren_count += 1;
+                                expression.push('(');
+                                self.next_token();
+                            }
+                            TokenKind::RParen => {
+                                nested_paren_count -= 1;
+                                expression.push(')');
+                                self.next_token();
+                            }
+                            TokenKind::ArithSubst => {
+                                // Handle deeply nested arithmetic substitution
+                                expression.push_str(" $((");
+                                nested_paren_count += 2; // Add 2 for the new $((
+                                self.next_token();
+                            }
+                            TokenKind::Word(word) => {
+                                if !expression.ends_with('(') && !expression.ends_with(' ') {
+                                    expression.push(' ');
+                                }
+                                expression.push_str(word);
+                                self.next_token();
+                            }
+                            _ => {
+                                // Add other tokens as-is
+                                let token_value = &self.current_token.value;
+                                if !token_value.is_empty() {
+                                    if !expression.ends_with('(') && !expression.ends_with(' ') {
+                                        expression.push(' ');
+                                    }
+                                    expression.push_str(token_value);
+                                }
+                                self.next_token();
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // For unhandled tokens, add their value but be careful about parentheses
+                    let token_value = &self.current_token.value;
+                    if token_value != ")" {
+                        // Don't add stray closing parentheses
+                        if !expression.is_empty()
+                            && !expression.ends_with(' ')
+                            && !token_value.is_empty()
+                            && !expression.ends_with('(')
+                        {
+                            expression.push(' ');
+                        }
+                        expression.push_str(token_value);
+                    }
+                    self.next_token();
+                }
+            }
+        }
+
+        Node::ArithmeticCommand {
             expression: expression.trim().to_string(),
         }
     }
