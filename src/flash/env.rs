@@ -21,9 +21,7 @@ impl VariableValue {
         match self {
             VariableValue::String(s) => s.clone(),
             VariableValue::Array(arr) => arr.join(" "),
-            VariableValue::AssocArray(map) => {
-                map.values().cloned().collect::<Vec<_>>().join(" ")
-            }
+            VariableValue::AssocArray(map) => map.values().cloned().collect::<Vec<_>>().join(" "),
         }
     }
 
@@ -155,9 +153,12 @@ impl Environment {
     /// Set up shell-specific variables
     fn set_shell_variables(&mut self) {
         let version = env!("CARGO_PKG_VERSION");
-        let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".to_string());
-        let target_vendor = std::env::var("CARGO_CFG_TARGET_VENDOR").unwrap_or_else(|_| "unknown".to_string());
-        let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
+        let target_arch =
+            std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".to_string());
+        let target_vendor =
+            std::env::var("CARGO_CFG_TARGET_VENDOR").unwrap_or_else(|_| "unknown".to_string());
+        let target_os =
+            std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
         let machtype = format!("{}-{}-{}", target_arch, target_vendor, target_os);
 
         // Shell identification
@@ -168,9 +169,11 @@ impl Environment {
         self.set_exported("OSTYPE", target_os);
 
         // Shell level
-        let shlvl = self.get("SHLVL")
+        let shlvl = self
+            .get("SHLVL")
             .and_then(|v| v.parse::<i32>().ok())
-            .unwrap_or(0) + 1;
+            .unwrap_or(0)
+            + 1;
         self.set_exported("SHLVL", shlvl.to_string());
 
         // Default prompts
@@ -214,11 +217,13 @@ impl Environment {
     /// Set up special shell parameters
     fn set_special_parameters(&mut self) {
         self.special_params.insert("?".to_string(), "0".to_string());
-        self.special_params.insert("$".to_string(), self.pid.to_string());
+        self.special_params
+            .insert("$".to_string(), self.pid.to_string());
         self.special_params.insert("#".to_string(), "0".to_string());
         self.special_params.insert("*".to_string(), String::new());
         self.special_params.insert("@".to_string(), String::new());
-        self.special_params.insert("-".to_string(), self.shell_flags.clone());
+        self.special_params
+            .insert("-".to_string(), self.shell_flags.clone());
         self.special_params.insert("!".to_string(), "0".to_string());
         self.special_params.insert("_".to_string(), String::new());
     }
@@ -324,15 +329,18 @@ impl Environment {
     /// Set exit status and update $?
     pub fn set_exit_status(&mut self, status: i32) {
         self.exit_status = status;
-        self.special_params.insert("?".to_string(), status.to_string());
+        self.special_params
+            .insert("?".to_string(), status.to_string());
     }
 
     /// Set positional parameters
     pub fn set_positional_params(&mut self, params: Vec<String>) {
         self.positional_params = params;
-        self.special_params.insert("#".to_string(), 
-            (self.positional_params.len().saturating_sub(1)).to_string());
-        
+        self.special_params.insert(
+            "#".to_string(),
+            (self.positional_params.len().saturating_sub(1)).to_string(),
+        );
+
         // Update $* and $@
         let args = if self.positional_params.len() > 1 {
             self.positional_params[1..].join(" ")
@@ -347,22 +355,22 @@ impl Environment {
     pub fn change_directory(&mut self, new_dir: PathBuf) -> io::Result<()> {
         let old_pwd = self.pwd.clone();
         env::set_current_dir(&new_dir)?;
-        
+
         self.oldpwd = old_pwd;
         self.pwd = Some(new_dir.clone());
-        
+
         self.set_exported("PWD", new_dir.to_string_lossy().to_string());
         if let Some(old) = &self.oldpwd {
             self.set_exported("OLDPWD", old.to_string_lossy().to_string());
         }
-        
+
         Ok(())
     }
 
     /// Get all exported variables for command execution
     pub fn get_exported_vars(&self) -> HashMap<String, String> {
         let mut exported = HashMap::new();
-        
+
         for layer in &self.layers {
             for (name, var) in layer {
                 if var.flags.export {
@@ -370,7 +378,7 @@ impl Environment {
                 }
             }
         }
-        
+
         exported
     }
 }

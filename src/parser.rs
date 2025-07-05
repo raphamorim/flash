@@ -137,22 +137,22 @@ pub enum ProcessSubstDirection {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParameterExpansionType {
-    Simple,                    // ${var}
-    Default(String),           // ${var:-default}
-    Assign(String),            // ${var:=default}
-    Error(String),             // ${var:?error}
-    Alternative(String),       // ${var:+alternative}
-    Length,                    // ${#var}
-    RemoveSmallestPrefix(String), // ${var#pattern}
-    RemoveLargestPrefix(String),  // ${var##pattern}
-    RemoveSmallestSuffix(String), // ${var%pattern}
-    RemoveLargestSuffix(String),  // ${var%%pattern}
+    Simple,                              // ${var}
+    Default(String),                     // ${var:-default}
+    Assign(String),                      // ${var:=default}
+    Error(String),                       // ${var:?error}
+    Alternative(String),                 // ${var:+alternative}
+    Length,                              // ${#var}
+    RemoveSmallestPrefix(String),        // ${var#pattern}
+    RemoveLargestPrefix(String),         // ${var##pattern}
+    RemoveSmallestSuffix(String),        // ${var%pattern}
+    RemoveLargestSuffix(String),         // ${var%%pattern}
     Substring(Option<i32>, Option<i32>), // ${var:offset:length}
-    Indirect,                  // ${!var}
-    ArrayAll,                  // ${array[@]}
-    ArrayStar,                 // ${array[*]}
-    ArrayLength,               // ${#array[@]}
-    ArrayIndex(String),        // ${array[index]}
+    Indirect,                            // ${!var}
+    ArrayAll,                            // ${array[@]}
+    ArrayStar,                           // ${array[*]}
+    ArrayLength,                         // ${#array[@]}
+    ArrayIndex(String),                  // ${array[index]}
 }
 
 /// Case pattern for case statements
@@ -171,14 +171,14 @@ pub struct Redirect {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RedirectKind {
-    Input,     // <
-    Output,    // >
-    Append,    // >>
-    HereDoc,   // <<
+    Input,       // <
+    Output,      // >
+    Append,      // >>
+    HereDoc,     // <<
     HereDocDash, // <<-
-    HereString, // <<<
-    InputDup,  // <&
-    OutputDup, // >&
+    HereString,  // <<<
+    InputDup,    // <&
+    OutputDup,   // >&
 }
 
 /// Parser converts tokens into an AST
@@ -352,8 +352,12 @@ impl Parser {
             TokenKind::DoubleLBracket => Some(self.parse_extended_test()),
             TokenKind::History => Some(self.parse_history_expansion()),
             TokenKind::ParamExpansion => Some(self.parse_parameter_expansion()),
-            TokenKind::ProcessSubstIn => Some(self.parse_process_substitution(ProcessSubstDirection::Input)),
-            TokenKind::ProcessSubstOut => Some(self.parse_process_substitution(ProcessSubstDirection::Output)),
+            TokenKind::ProcessSubstIn => {
+                Some(self.parse_process_substitution(ProcessSubstDirection::Input))
+            }
+            TokenKind::ProcessSubstOut => {
+                Some(self.parse_process_substitution(ProcessSubstDirection::Output))
+            }
             TokenKind::Complete => Some(self.parse_complete()),
             _ => None,
         }
@@ -2041,19 +2045,25 @@ impl Parser {
                     self.next_token();
                 }
                 TokenKind::Word(word) => {
-                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                    if !expression.is_empty()
+                        && !expression.ends_with(' ')
+                        && !expression.ends_with('(')
+                    {
                         expression.push(' ');
                     }
                     expression.push_str(word);
                     self.next_token();
                 }
                 TokenKind::Dollar => {
-                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                    if !expression.is_empty()
+                        && !expression.ends_with(' ')
+                        && !expression.ends_with('(')
+                    {
                         expression.push(' ');
                     }
                     expression.push('$');
                     self.next_token();
-                    
+
                     // Handle the variable name that follows the $
                     match &self.current_token.kind {
                         TokenKind::Word(word) => {
@@ -2084,7 +2094,7 @@ impl Parser {
                     }
                     expression.push('=');
                     self.next_token();
-                    
+
                     // Check if the next token is also Assignment to handle ==
                     if self.current_token.kind == TokenKind::Assignment {
                         expression.push('=');
@@ -2097,7 +2107,7 @@ impl Parser {
                     }
                     expression.push('<');
                     self.next_token();
-                    
+
                     // Check if the next token is Assignment to handle <=
                     if self.current_token.kind == TokenKind::Assignment {
                         expression.push('=');
@@ -2110,7 +2120,7 @@ impl Parser {
                     }
                     expression.push('>');
                     self.next_token();
-                    
+
                     // Check if the next token is Assignment to handle >=
                     if self.current_token.kind == TokenKind::Assignment {
                         expression.push('=');
@@ -2133,15 +2143,18 @@ impl Parser {
                 }
                 TokenKind::ArithSubst => {
                     // Handle nested arithmetic substitution $((
-                    if !expression.is_empty() && !expression.ends_with(' ') && !expression.ends_with('(') {
+                    if !expression.is_empty()
+                        && !expression.ends_with(' ')
+                        && !expression.ends_with('(')
+                    {
                         expression.push(' ');
                     }
                     expression.push_str("$((");
                     self.next_token();
-                    
+
                     // Parse the nested arithmetic content until we find the matching ))
                     let mut nested_paren_count = 2; // We start with 2 open parentheses from $((
-                    
+
                     while nested_paren_count > 0 && self.current_token.kind != TokenKind::EOF {
                         match &self.current_token.kind {
                             TokenKind::LParen => {
@@ -2482,10 +2495,10 @@ impl Parser {
     // Parse parameter expansion: ${var}, ${var:-default}, etc.
     fn parse_parameter_expansion(&mut self) -> Node {
         self.next_token(); // Skip ${
-        
+
         let mut parameter = String::new();
         let mut expansion_type = ParameterExpansionType::Simple;
-        
+
         // Handle indirect expansion ${!var}
         if let TokenKind::Word(word) = &self.current_token.kind {
             if word == "!" {
@@ -2507,7 +2520,7 @@ impl Parser {
                 // Regular variable name
                 parameter = word.clone();
                 self.next_token(); // Skip variable name
-                
+
                 // Check for expansion operators
                 if let TokenKind::Word(op) = &self.current_token.kind {
                     match op.as_str() {
@@ -2564,20 +2577,22 @@ impl Parser {
                             let offset_str = &op[1..];
                             if let Ok(offset) = offset_str.parse::<i32>() {
                                 self.next_token(); // Skip offset
-                                
+
                                 // Check for length
-                                let length = if let TokenKind::Word(len_str) = &self.current_token.kind {
-                                    if let Ok(len) = len_str.parse::<i32>() {
-                                        self.next_token(); // Skip length
-                                        Some(len)
+                                let length =
+                                    if let TokenKind::Word(len_str) = &self.current_token.kind {
+                                        if let Ok(len) = len_str.parse::<i32>() {
+                                            self.next_token(); // Skip length
+                                            Some(len)
+                                        } else {
+                                            None
+                                        }
                                     } else {
                                         None
-                                    }
-                                } else {
-                                    None
-                                };
-                                
-                                expansion_type = ParameterExpansionType::Substring(Some(offset), length);
+                                    };
+
+                                expansion_type =
+                                    ParameterExpansionType::Substring(Some(offset), length);
                             }
                         }
                         _ => {
@@ -2587,24 +2602,26 @@ impl Parser {
                 }
             }
         }
-        
+
         // Skip closing brace
         if self.current_token.kind == TokenKind::RBrace {
             self.next_token();
         }
-        
+
         Node::ParameterExpansion {
             parameter,
             expansion_type,
         }
     }
-    
+
     // Parse the value part of parameter expansion (after operators like :-, :=, etc.)
     fn parse_parameter_expansion_value(&mut self) -> String {
         let mut value = String::new();
-        
+
         // Collect tokens until we hit the closing brace
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             match &self.current_token.kind {
                 TokenKind::Word(word) => {
                     value.push_str(word);
@@ -2619,19 +2636,19 @@ impl Parser {
             }
             self.next_token();
         }
-        
+
         value
     }
 
     // Parse process substitution: <(cmd) or >(cmd)
     fn parse_process_substitution(&mut self, direction: ProcessSubstDirection) -> Node {
         self.next_token(); // Skip <( or >(
-        
+
         // Parse the command inside the process substitution
         let command = self.parse_until_token_kind(TokenKind::RParen);
-        
+
         self.next_token(); // Skip )
-        
+
         Node::ProcessSubstitution {
             command: Box::new(command),
             direction,

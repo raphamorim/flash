@@ -7,15 +7,15 @@
 
 //! Example demonstrating the improved environment system
 
-use flash::flash::env::Environment;
 use flash::environment_integration::env_helpers;
+use flash::flash::env::Environment;
 
 fn main() {
     println!("=== Flash Shell Environment System Demo ===\n");
 
     // Create a new environment
     let mut env = Environment::new();
-    
+
     println!("1. Basic Environment Variables:");
     println!("SHELL: {:?}", env.get("SHELL"));
     println!("FLASH_VERSION: {:?}", env.get("FLASH_VERSION"));
@@ -83,17 +83,23 @@ fn main() {
     env.set("TEST_EXPORT", "exported_value".to_string());
     env.export("TEST_EXPORT");
     println!("TEST_EXPORT (exported): {:?}", env.get("TEST_EXPORT"));
-    println!("In system environment: {:?}", std::env::var("TEST_EXPORT").ok());
+    println!(
+        "In system environment: {:?}",
+        std::env::var("TEST_EXPORT").ok()
+    );
     println!();
 
     println!("=== Testing Array Variables ===\n");
 
     // Test array variables
-    env.set_array("TEST_ARRAY", vec![
-        "item1".to_string(),
-        "item2".to_string(),
-        "item3".to_string(),
-    ]);
+    env.set_array(
+        "TEST_ARRAY",
+        vec![
+            "item1".to_string(),
+            "item2".to_string(),
+            "item3".to_string(),
+        ],
+    );
     println!("Array variable set (would need special handling for display)");
     println!();
 
@@ -129,17 +135,24 @@ fn main() {
     // Create a subshell environment
     let subshell_env = env_helpers::create_subshell_environment(&env);
     println!("Subshell SHLVL: {:?}", subshell_env.get("SHLVL"));
-    println!("Subshell FLASH_SUBSHELL: {:?}", subshell_env.get("FLASH_SUBSHELL"));
+    println!(
+        "Subshell FLASH_SUBSHELL: {:?}",
+        subshell_env.get("FLASH_SUBSHELL")
+    );
     println!();
 
     println!("=== Testing Function Environment ===\n");
 
     // Simulate function call
-    env_helpers::setup_function_environment(&mut env, "test_function", vec![
-        "test_function".to_string(),
-        "func_arg1".to_string(),
-        "func_arg2".to_string(),
-    ]);
+    env_helpers::setup_function_environment(
+        &mut env,
+        "test_function",
+        vec![
+            "test_function".to_string(),
+            "func_arg1".to_string(),
+            "func_arg2".to_string(),
+        ],
+    );
 
     println!("Inside function:");
     println!("FUNCNAME: {:?}", env.get("FUNCNAME"));

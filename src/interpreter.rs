@@ -5,6 +5,7 @@
  * under GNU General Public License v3.0.
  */
 
+use crate::completion::CompletionSystem;
 use crate::flash;
 use crate::lexer::Lexer;
 use crate::parser::CasePattern;
@@ -12,7 +13,6 @@ use crate::parser::Node;
 use crate::parser::Parser;
 use crate::parser::Redirect;
 use crate::parser::RedirectKind;
-use crate::completion::CompletionSystem;
 
 use regex::Regex;
 use std::collections::HashMap;
@@ -541,11 +541,11 @@ impl DefaultEvaluator {
                     eprintln!("Usage: complete <command>");
                     return Ok(1);
                 }
-                
+
                 let test_line = format!("{} ", args.join(" "));
                 let context = CompletionSystem::parse_context(&test_line, test_line.len());
                 let completions = interpreter.completion_system.complete(&context);
-                
+
                 for completion in completions {
                     println!("{}", completion);
                 }
@@ -588,8 +588,10 @@ impl DefaultEvaluator {
                             let content = interpreter.expand_variables(&redirect.file);
                             let mut temp_file = tempfile::NamedTempFile::new()?;
                             temp_file.write_all(content.as_bytes())?;
-                            temp_file.write_all(b"
-")?;
+                            temp_file.write_all(
+                                b"
+",
+                            )?;
                             temp_file.flush()?;
                             let file = temp_file.reopen()?;
                             command.stdin(Stdio::from(file));
@@ -898,10 +900,7 @@ impl DefaultEvaluator {
                             .insert(name.to_string(), result.to_string());
                     }
                     Err(_) => {
-                        eprintln!(
-                            "arithmetic command: invalid expression: {}",
-                            expanded_expr
-                        );
+                        eprintln!("arithmetic command: invalid expression: {}", expanded_expr);
                         interpreter
                             .variables
                             .insert(name.to_string(), "0".to_string());
@@ -1326,16 +1325,17 @@ impl DefaultEvaluator {
                 }
             }
             Err(_) => {
-                eprintln!(
-                    "arithmetic command: invalid expression: {}",
-                    expanded_expr
-                );
+                eprintln!("arithmetic command: invalid expression: {}", expanded_expr);
                 Ok(1)
             }
         }
     }
 
-    pub fn evaluate_arithmetic_expression_with_assignment(&mut self, expr: &str, interpreter: &mut Interpreter) -> Result<i64, String> {
+    pub fn evaluate_arithmetic_expression_with_assignment(
+        &mut self,
+        expr: &str,
+        interpreter: &mut Interpreter,
+    ) -> Result<i64, String> {
         // Enhanced arithmetic expression evaluator that can handle assignments
         // Handles +, -, *, /, %, comparison operators, logical operators, assignments, and parentheses
 
@@ -1366,21 +1366,29 @@ impl DefaultEvaluator {
             if pos > 0 && pos + 1 < expr.len() {
                 let prev_char = expr.chars().nth(pos - 1);
                 let next_char = expr.chars().nth(pos + 1);
-                if prev_char != Some('!') && prev_char != Some('<') && prev_char != Some('>') && prev_char != Some('=') && next_char != Some('=') {
+                if prev_char != Some('!')
+                    && prev_char != Some('<')
+                    && prev_char != Some('>')
+                    && prev_char != Some('=')
+                    && next_char != Some('=')
+                {
                     // This is an assignment, not a comparison
                     let left = expr[..pos].trim();
                     let right = expr[pos + 1..].trim();
-                    let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
-                    
+                    let right_val =
+                        self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+
                     // Extract variable name from left side (remove $ if present)
                     let var_name = if left.starts_with('$') {
                         &left[1..]
                     } else {
                         left
                     };
-                    
+
                     // Set the variable
-                    interpreter.variables.insert(var_name.to_string(), right_val.to_string());
+                    interpreter
+                        .variables
+                        .insert(var_name.to_string(), right_val.to_string());
                     return Ok(right_val);
                 }
             }
@@ -1390,71 +1398,101 @@ impl DefaultEvaluator {
         if let Some(pos) = expr.rfind("||") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
-            return Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 });
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val != 0 || right_val != 0 {
+                1
+            } else {
+                0
+            });
         }
 
         if let Some(pos) = expr.rfind("&&") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
-            return Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 });
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            return Ok(if left_val != 0 && right_val != 0 {
+                1
+            } else {
+                0
+            });
         }
 
         // Handle comparison operators
         if let Some(pos) = expr.rfind("<=") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(if left_val <= right_val { 1 } else { 0 });
         }
 
         if let Some(pos) = expr.rfind(">=") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(if left_val >= right_val { 1 } else { 0 });
         }
 
         if let Some(pos) = expr.rfind("!=") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(if left_val != right_val { 1 } else { 0 });
         }
 
         if let Some(pos) = expr.rfind("==") {
             let left = expr[..pos].trim();
             let right = expr[pos + 2..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(if left_val == right_val { 1 } else { 0 });
         }
 
         // Handle single character comparison operators (be careful with order)
         if let Some(pos) = expr.rfind('<') {
             // Make sure it's not part of <= or <<
-            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('<')) {
+            if pos + 1 >= expr.len()
+                || (expr.chars().nth(pos + 1) != Some('=')
+                    && expr.chars().nth(pos + 1) != Some('<'))
+            {
                 let left = expr[..pos].trim();
                 let right = expr[pos + 1..].trim();
-                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                let left_val =
+                    self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val =
+                    self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
                 return Ok(if left_val < right_val { 1 } else { 0 });
             }
         }
 
         if let Some(pos) = expr.rfind('>') {
             // Make sure it's not part of >= or >>
-            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('>')) {
+            if pos + 1 >= expr.len()
+                || (expr.chars().nth(pos + 1) != Some('=')
+                    && expr.chars().nth(pos + 1) != Some('>'))
+            {
                 let left = expr[..pos].trim();
                 let right = expr[pos + 1..].trim();
-                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                let left_val =
+                    self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val =
+                    self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
                 return Ok(if left_val > right_val { 1 } else { 0 });
             }
         }
@@ -1463,8 +1501,10 @@ impl DefaultEvaluator {
         if let Some(pos) = expr.rfind('+') {
             let left = expr[..pos].trim();
             let right = expr[pos + 1..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(left_val + right_val);
         }
 
@@ -1473,8 +1513,10 @@ impl DefaultEvaluator {
             if pos > 0 {
                 let left = expr[..pos].trim();
                 let right = expr[pos + 1..].trim();
-                let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-                let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+                let left_val =
+                    self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+                let right_val =
+                    self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
                 return Ok(left_val - right_val);
             }
         }
@@ -1483,16 +1525,20 @@ impl DefaultEvaluator {
         if let Some(pos) = expr.rfind('*') {
             let left = expr[..pos].trim();
             let right = expr[pos + 1..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             return Ok(left_val * right_val);
         }
 
         if let Some(pos) = expr.rfind('/') {
             let left = expr[..pos].trim();
             let right = expr[pos + 1..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             if right_val == 0 {
                 return Err("division by zero".to_string());
             }
@@ -1502,8 +1548,10 @@ impl DefaultEvaluator {
         if let Some(pos) = expr.rfind('%') {
             let left = expr[..pos].trim();
             let right = expr[pos + 1..].trim();
-            let left_val = self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
-            let right_val = self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
+            let left_val =
+                self.evaluate_arithmetic_expression_with_assignment(left, interpreter)?;
+            let right_val =
+                self.evaluate_arithmetic_expression_with_assignment(right, interpreter)?;
             if right_val == 0 {
                 return Err("division by zero".to_string());
             }
@@ -1551,7 +1599,11 @@ impl DefaultEvaluator {
             let right = expr[pos + 2..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
-            return Ok(if left_val != 0 || right_val != 0 { 1 } else { 0 });
+            return Ok(if left_val != 0 || right_val != 0 {
+                1
+            } else {
+                0
+            });
         }
 
         if let Some(pos) = expr.rfind("&&") {
@@ -1559,7 +1611,11 @@ impl DefaultEvaluator {
             let right = expr[pos + 2..].trim();
             let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
             let right_val = DefaultEvaluator::evaluate_arithmetic_expression(right)?;
-            return Ok(if left_val != 0 && right_val != 0 { 1 } else { 0 });
+            return Ok(if left_val != 0 && right_val != 0 {
+                1
+            } else {
+                0
+            });
         }
 
         // Handle comparison operators
@@ -1598,7 +1654,10 @@ impl DefaultEvaluator {
         // Handle single character comparison operators (be careful with order)
         if let Some(pos) = expr.rfind('<') {
             // Make sure it's not part of <= or <<
-            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('<')) {
+            if pos + 1 >= expr.len()
+                || (expr.chars().nth(pos + 1) != Some('=')
+                    && expr.chars().nth(pos + 1) != Some('<'))
+            {
                 let left = expr[..pos].trim();
                 let right = expr[pos + 1..].trim();
                 let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
@@ -1609,7 +1668,10 @@ impl DefaultEvaluator {
 
         if let Some(pos) = expr.rfind('>') {
             // Make sure it's not part of >= or >>
-            if pos + 1 >= expr.len() || (expr.chars().nth(pos + 1) != Some('=') && expr.chars().nth(pos + 1) != Some('>')) {
+            if pos + 1 >= expr.len()
+                || (expr.chars().nth(pos + 1) != Some('=')
+                    && expr.chars().nth(pos + 1) != Some('>'))
+            {
                 let left = expr[..pos].trim();
                 let right = expr[pos + 1..].trim();
                 let left_val = DefaultEvaluator::evaluate_arithmetic_expression(left)?;
@@ -1624,7 +1686,11 @@ impl DefaultEvaluator {
             if pos > 0 && pos + 1 < expr.len() {
                 let prev_char = expr.chars().nth(pos - 1);
                 let next_char = expr.chars().nth(pos + 1);
-                if prev_char != Some('!') && prev_char != Some('<') && prev_char != Some('>') && next_char != Some('=') {
+                if prev_char != Some('!')
+                    && prev_char != Some('<')
+                    && prev_char != Some('>')
+                    && next_char != Some('=')
+                {
                     // This is an assignment, not a comparison
                     let _left = expr[..pos].trim();
                     let right = expr[pos + 1..].trim();
@@ -2104,18 +2170,22 @@ impl Interpreter {
     }
 
     // Generate completion candidates for the current input using the enhanced completion system
-    pub fn generate_completions(&mut self, input: &str, cursor_pos: usize) -> (Vec<String>, Vec<String>) {
+    pub fn generate_completions(
+        &mut self,
+        input: &str,
+        cursor_pos: usize,
+    ) -> (Vec<String>, Vec<String>) {
         // Parse the completion context
         let context = CompletionSystem::parse_context(input, cursor_pos);
-        
+
         // Get completions from the enhanced completion system
         let completions = self.completion_system.complete(&context);
-        
+
         // Calculate suffixes for the current word
         let current_word = &context.current_word;
         let mut suffixes = Vec::new();
         let mut full_names = Vec::new();
-        
+
         for completion in completions {
             if completion.starts_with(current_word) {
                 // Calculate the suffix (what needs to be added)
@@ -2128,17 +2198,21 @@ impl Interpreter {
                 full_names.push(completion);
             }
         }
-        
+
         // Fallback to old completion system for variables if new system returns nothing
         if suffixes.is_empty() {
             return self.generate_completions_fallback(input, cursor_pos);
         }
-        
+
         (suffixes, full_names)
     }
-    
+
     // Fallback completion method (the old implementation)
-    fn generate_completions_fallback(&self, input: &str, cursor_pos: usize) -> (Vec<String>, Vec<String>) {
+    fn generate_completions_fallback(
+        &self,
+        input: &str,
+        cursor_pos: usize,
+    ) -> (Vec<String>, Vec<String>) {
         let input_up_to_cursor = &input[..cursor_pos];
         let words: Vec<&str> = input_up_to_cursor.split_whitespace().collect();
 
@@ -3463,7 +3537,7 @@ impl Interpreter {
     // Method to evaluate arithmetic expressions with variable access
     fn evaluate_arithmetic_with_variables(&self, expr: &str) -> Result<i64, String> {
         // This method handles arithmetic expressions with variables and nested arithmetic expansions
-        
+
         let expr = expr.trim();
         if expr.is_empty() {
             return Ok(0);
@@ -3487,17 +3561,17 @@ impl Interpreter {
 
         // First, expand any nested arithmetic expressions $((...)
         let expanded_expr = self.expand_nested_arithmetic(expr)?;
-        
+
         // Then expand variables in the result
         let mut final_expr = String::new();
         let mut chars = expanded_expr.chars().peekable();
-        
+
         while let Some(c) = chars.next() {
             if c.is_alphabetic() || c == '_' {
                 // This might be a variable name
                 let mut var_name = String::new();
                 var_name.push(c);
-                
+
                 // Collect the rest of the variable name
                 while let Some(&next_c) = chars.peek() {
                     if next_c.is_alphanumeric() || next_c == '_' {
@@ -3506,7 +3580,7 @@ impl Interpreter {
                         break;
                     }
                 }
-                
+
                 // Look up the variable
                 if let Some(value) = self.variables.get(&var_name) {
                     final_expr.push_str(value);
@@ -3517,7 +3591,7 @@ impl Interpreter {
                 final_expr.push(c);
             }
         }
-        
+
         // Now evaluate the fully expanded expression using the static method
         DefaultEvaluator::evaluate_arithmetic_expression(&final_expr)
     }
@@ -3526,17 +3600,17 @@ impl Interpreter {
     fn expand_nested_arithmetic(&self, expr: &str) -> Result<String, String> {
         let mut result = String::new();
         let mut chars = expr.chars().peekable();
-        
+
         while let Some(c) = chars.next() {
             if c == '$' && chars.peek() == Some(&'(') {
                 chars.next(); // consume '('
                 if chars.peek() == Some(&'(') {
                     chars.next(); // consume second '('
-                    
+
                     // Find the matching closing parentheses
                     let mut paren_count = 2;
                     let mut nested_expr = String::new();
-                    
+
                     while paren_count > 0 {
                         if let Some(ch) = chars.next() {
                             if ch == '(' {
@@ -3544,15 +3618,17 @@ impl Interpreter {
                             } else if ch == ')' {
                                 paren_count -= 1;
                             }
-                            
+
                             if paren_count > 0 {
                                 nested_expr.push(ch);
                             }
                         } else {
-                            return Err("Unmatched parentheses in arithmetic expression".to_string());
+                            return Err(
+                                "Unmatched parentheses in arithmetic expression".to_string()
+                            );
                         }
                     }
-                    
+
                     // Recursively evaluate the nested expression
                     let nested_result = self.evaluate_arithmetic_with_variables(&nested_expr)?;
                     result.push_str(&nested_result.to_string());
@@ -3565,7 +3641,7 @@ impl Interpreter {
                 result.push(c);
             }
         }
-        
+
         Ok(result)
     }
 
@@ -3615,8 +3691,7 @@ impl Interpreter {
 
                         // Evaluate the arithmetic expression
                         if !arith_content.is_empty() {
-                            match self.evaluate_arithmetic_with_variables(&arith_content)
-                            {
+                            match self.evaluate_arithmetic_with_variables(&arith_content) {
                                 Ok(arith_result) => {
                                     result.push_str(&arith_result.to_string());
                                 }
@@ -4985,52 +5060,82 @@ mod tests {
     #[test]
     fn test_enhanced_completion_system_integration() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test that the completion system is properly initialized
-        assert!(interpreter.completion_system.command_completions.contains_key("git"));
-        assert!(interpreter.completion_system.command_completions.contains_key("cd"));
-        
+        assert!(
+            interpreter
+                .completion_system
+                .command_completions
+                .contains_key("git")
+        );
+        assert!(
+            interpreter
+                .completion_system
+                .command_completions
+                .contains_key("cd")
+        );
+
         // Test git command completion
         let (_suffixes, full_names) = interpreter.generate_completions("gi", 2);
-        assert!(full_names.iter().any(|c| c == "git"), "Should complete 'git' for 'gi' prefix");
-        
+        assert!(
+            full_names.iter().any(|c| c == "git"),
+            "Should complete 'git' for 'gi' prefix"
+        );
+
         // Test git subcommand completion
         let (_suffixes, full_names) = interpreter.generate_completions("git ", 4);
-        assert!(full_names.contains(&"add".to_string()), "Should complete git subcommands");
-        assert!(full_names.contains(&"commit".to_string()), "Should complete git subcommands");
-        
+        assert!(
+            full_names.contains(&"add".to_string()),
+            "Should complete git subcommands"
+        );
+        assert!(
+            full_names.contains(&"commit".to_string()),
+            "Should complete git subcommands"
+        );
+
         // Test cd directory completion
         let (_suffixes, full_names) = interpreter.generate_completions("cd ", 3);
         // All completions should be directories
         for completion in &full_names {
-            assert!(completion.ends_with('/'), "CD completion '{}' should be a directory", completion);
+            assert!(
+                completion.ends_with('/'),
+                "CD completion '{}' should be a directory",
+                completion
+            );
         }
     }
 
     #[test]
     fn test_completion_fallback_mechanism() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test variable completion (should use fallback)
-        interpreter.variables.insert("TEST_VAR".to_string(), "test_value".to_string());
-        
+        interpreter
+            .variables
+            .insert("TEST_VAR".to_string(), "test_value".to_string());
+
         let (_suffixes, full_names) = interpreter.generate_completions("echo $TEST_", 11);
-        
+
         // Should complete the variable
-        assert!(full_names.iter().any(|c| c == "$TEST_VAR"), 
-                "Should complete variable, got: {:?}", full_names);
+        assert!(
+            full_names.iter().any(|c| c == "$TEST_VAR"),
+            "Should complete variable, got: {:?}",
+            full_names
+        );
     }
 
     #[test]
     fn test_completion_with_aliases() {
         let mut interpreter = Interpreter::new();
-        
+
         // Add an alias
-        interpreter.aliases.insert("ll".to_string(), "ls -la".to_string());
-        
+        interpreter
+            .aliases
+            .insert("ll".to_string(), "ls -la".to_string());
+
         // Test completion should include aliases
         let (_suffixes, full_names) = interpreter.generate_completions("l", 1);
-        
+
         // Should include the alias in command completions
         // Note: This tests the fallback system since aliases aren't in the new completion system yet
         assert!(full_names.len() > 0, "Should return some completions");
@@ -5046,7 +5151,7 @@ mod tests {
         assert_eq!(context.cword, 2);
         assert_eq!(context.current_word, "");
         assert_eq!(context.prev_word, "add");
-        
+
         // Test partial word completion
         let context = CompletionSystem::parse_context("git che", 7);
         assert_eq!(context.words, vec!["git", "che"]);
@@ -5058,23 +5163,26 @@ mod tests {
     #[test]
     fn test_completion_suffix_calculation() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test that suffixes are calculated correctly
         let (suffixes, full_names) = interpreter.generate_completions("ec", 2);
-        
+
         // Find echo in the completions
         if let Some(pos) = full_names.iter().position(|c| c == "echo") {
-            assert_eq!(suffixes[pos], "ho", "Suffix for 'echo' from 'ec' should be 'ho'");
+            assert_eq!(
+                suffixes[pos], "ho",
+                "Suffix for 'echo' from 'ec' should be 'ho'"
+            );
         }
     }
 
     #[test]
     fn test_completion_empty_input() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test completion with empty input
         let (_suffixes, full_names) = interpreter.generate_completions("", 0);
-        
+
         // Should return command completions
         assert!(full_names.contains(&"echo".to_string()));
         assert!(full_names.contains(&"cd".to_string()));
@@ -5084,10 +5192,10 @@ mod tests {
     #[test]
     fn test_completion_with_spaces() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test completion after command with space
         let (_suffixes, full_names) = interpreter.generate_completions("echo ", 5);
-        
+
         // Should return file completions (fallback behavior)
         assert!(full_names.len() > 0); // At least doesn't crash
     }
@@ -5095,19 +5203,22 @@ mod tests {
     #[test]
     fn test_completion_system_setup() {
         let system = CompletionSystem::new();
-        
+
         // Verify all expected default completions are set up
         let expected_commands = ["git", "ssh", "cd", "kill", "man"];
         for cmd in &expected_commands {
-            assert!(system.command_completions.contains_key(*cmd), 
-                    "Should have completion for '{}'", cmd);
+            assert!(
+                system.command_completions.contains_key(*cmd),
+                "Should have completion for '{}'",
+                cmd
+            );
         }
-        
+
         // Verify git completion is configured correctly
         let git_entry = &system.command_completions["git"];
         assert_eq!(git_entry.function, "_git_complete");
         assert!(git_entry.o_options.contains(&"nospace".to_string()));
-        
+
         // Verify cd completion is configured correctly
         let cd_entry = &system.command_completions["cd"];
         assert_eq!(cd_entry.action, "directory");
@@ -5116,37 +5227,44 @@ mod tests {
     #[test]
     fn test_completion_performance() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test that completion doesn't take too long
         use std::time::Instant;
         let start = Instant::now();
-        
+
         for _ in 0..100 {
             let _ = interpreter.generate_completions("git ", 4);
         }
-        
+
         let duration = start.elapsed();
-        assert!(duration.as_millis() < 1000, "Completion should be fast, took {:?}", duration);
+        assert!(
+            duration.as_millis() < 1000,
+            "Completion should be fast, took {:?}",
+            duration
+        );
     }
 
     #[test]
     fn test_completion_edge_cases() {
         let mut interpreter = Interpreter::new();
-        
+
         // Test completion at various cursor positions
         let test_cases = [
-            ("git", 0),   // Beginning
-            ("git", 1),   // Middle
-            ("git", 3),   // End
-            ("git ", 4),  // After space
+            ("git", 0),  // Beginning
+            ("git", 1),  // Middle
+            ("git", 3),  // End
+            ("git ", 4), // After space
         ];
-        
+
         for (input, pos) in &test_cases {
             let (suffixes, full_names) = interpreter.generate_completions(input, *pos);
             // Should not crash and should return valid results
-            assert!(suffixes.len() == full_names.len(), 
-                    "Suffixes and full_names should have same length for input '{}' at pos {}", 
-                    input, pos);
+            assert!(
+                suffixes.len() == full_names.len(),
+                "Suffixes and full_names should have same length for input '{}' at pos {}",
+                input,
+                pos
+            );
         }
     }
 

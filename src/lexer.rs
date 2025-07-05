@@ -9,37 +9,38 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Word(String),
-    Assignment,      // =
-    Pipe,            // |
-    Semicolon,       // ;
-    DoubleSemicolon, // ;;
-    Newline,         // \n
-    And,             // &&
-    Background,      // & (add this new token)
-    Or,              // ||
-    LParen,          // (
-    RParen,          // )
-    LBrace,          // {
-    RBrace,          // }
-    Less,            // <
-    Great,           // >
-    DGreat,          // >>
-    Dollar,          // $
-    Quote,           // "
-    SingleQuote,     // '
-    Backtick,        // `
-    Comment,         // #
-    CmdSubst,        // $(
-    ArithSubst,      // $((
-    ParamExpansion,  // ${
+    Assignment,               // =
+    Pipe,                     // |
+    Semicolon,                // ;
+    DoubleSemicolon,          // ;;
+    Newline,                  // \n
+    And,                      // &&
+    Background,               // & (add this new token)
+    Or,                       // ||
+    LParen,                   // (
+    RParen,                   // )
+    LBrace,                   // {
+    RBrace,                   // }
+    Less,                     // <
+    Great,                    // >
+    DGreat,                   // >>
+    Dollar,                   // $
+    Quote,                    // "
+    SingleQuote,              // '
+    Backtick,                 // `
+    Comment,                  // #
+    CmdSubst,                 // $(
+    ArithSubst,               // $((
+    ArithCommand,             // ((
+    ParamExpansion,           // ${
     ParamExpansionOp(String), // :-, :=, :?, :+, #, ##, %, %%
-    ProcessSubstIn,  // <(
-    ProcessSubstOut, // >(
-    HereDoc,         // << followed by delimiter
-    HereDocDash,     // <<- followed by delimiter
-    HereDocContent(String), // Content of here-document
-    HereString,      // <<<
-    ExtGlob(char),   // For ?(, *(, +(, @(, !(
+    ProcessSubstIn,           // <(
+    ProcessSubstOut,          // >(
+    HereDoc,                  // << followed by delimiter
+    HereDocDash,              // <<- followed by delimiter
+    HereDocContent(String),   // Content of here-document
+    HereString,               // <<<
+    ExtGlob(char),            // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
     Then, // then keyword
@@ -318,11 +319,23 @@ impl Lexer {
                     position: current_position,
                 }
             }
-            '(' => Token {
-                kind: TokenKind::LParen,
-                value: "(".to_string(),
-                position: current_position,
-            },
+            '(' => {
+                // Check for arithmetic command (( syntax
+                if self.peek_char() == '(' {
+                    self.read_char(); // Consume second '('
+                    Token {
+                        kind: TokenKind::ArithCommand,
+                        value: "((".to_string(),
+                        position: current_position,
+                    }
+                } else {
+                    Token {
+                        kind: TokenKind::LParen,
+                        value: "(".to_string(),
+                        position: current_position,
+                    }
+                }
+            }
             ')' => {
                 // Check if we need to restore quote state after command substitution
                 if let Some(quote_char) = self.quote_after_cmdsubst {
@@ -1294,10 +1307,10 @@ impl Lexer {
     pub fn read_parameter_expansion(&mut self) -> Vec<Token> {
         let mut tokens = Vec::new();
         let start_position = Position::new(self.line, self.column);
-        
+
         // Skip whitespace
         self.skip_whitespace();
-        
+
         // Handle special cases first
         if self.ch == '!' {
             // Indirect expansion ${!var}
@@ -1312,7 +1325,7 @@ impl Lexer {
             // Length expansion ${#var} or prefix removal ${var#pattern}
             let pos = Position::new(self.line, self.column);
             self.read_char();
-            
+
             // Check if this is length expansion (# followed by variable name)
             if self.ch.is_alphabetic() || self.ch == '_' {
                 tokens.push(Token {
@@ -1328,23 +1341,23 @@ impl Lexer {
                 self.ch = '#';
             }
         }
-        
+
         // Read variable name
         if self.ch.is_alphabetic() || self.ch == '_' || self.ch.is_ascii_digit() {
             let var_token = self.read_word();
             tokens.push(var_token);
         }
-        
+
         // Skip whitespace
         self.skip_whitespace();
-        
+
         // Check for parameter expansion operators
         if self.ch == ':' {
             let op_start = Position::new(self.line, self.column);
             let mut op = String::new();
             op.push(self.ch);
             self.read_char();
-            
+
             // Read the operator character(s)
             match self.ch {
                 '-' | '=' | '?' | '+' => {
@@ -1355,7 +1368,7 @@ impl Lexer {
                     // Just a colon, might be for substring ${var:offset:length}
                 }
             }
-            
+
             tokens.push(Token {
                 kind: TokenKind::ParamExpansionOp(op.clone()),
                 value: op,
@@ -1367,13 +1380,13 @@ impl Lexer {
             let mut op = String::new();
             op.push(self.ch);
             self.read_char();
-            
+
             // Check for ## (longest prefix removal)
             if self.ch == '#' {
                 op.push(self.ch);
                 self.read_char();
             }
-            
+
             tokens.push(Token {
                 kind: TokenKind::ParamExpansionOp(op.clone()),
                 value: op,
@@ -1385,31 +1398,31 @@ impl Lexer {
             let mut op = String::new();
             op.push(self.ch);
             self.read_char();
-            
+
             // Check for %% (longest suffix removal)
             if self.ch == '%' {
                 op.push(self.ch);
                 self.read_char();
             }
-            
+
             tokens.push(Token {
                 kind: TokenKind::ParamExpansionOp(op.clone()),
                 value: op,
                 position: op_start,
             });
         }
-        
+
         // Read the rest of the content until }
         while self.ch != '}' && self.ch != '\0' {
             if self.ch.is_whitespace() {
                 self.skip_whitespace();
                 continue;
             }
-            
+
             let token = self.read_word();
             tokens.push(token);
         }
-        
+
         tokens
     }
 
@@ -1417,7 +1430,7 @@ impl Lexer {
     pub fn read_here_document(&mut self, delimiter: &str, dash_variant: bool) -> String {
         let mut content = String::new();
         let mut line = String::new();
-        
+
         // Skip to next line
         while self.ch != '\n' && self.ch != '\0' {
             self.read_char();
@@ -1425,40 +1438,40 @@ impl Lexer {
         if self.ch == '\n' {
             self.read_char();
         }
-        
+
         loop {
             line.clear();
-            
+
             // Read a complete line
             while self.ch != '\n' && self.ch != '\0' {
                 line.push(self.ch);
                 self.read_char();
             }
-            
+
             // Check if this line is the delimiter
             let trimmed_line = if dash_variant {
                 line.trim_start() // <<- removes leading tabs
             } else {
                 &line
             };
-            
+
             if trimmed_line == delimiter {
                 break;
             }
-            
+
             // Add the line to content
             content.push_str(&line);
             if self.ch == '\n' {
                 content.push('\n');
                 self.read_char();
             }
-            
+
             // Check for EOF
             if self.ch == '\0' {
                 break;
             }
         }
-        
+
         content
     }
 }
@@ -3226,5 +3239,4 @@ mod lexer_tests {
         ];
         test_tokens(input, expected);
     }
-
 }

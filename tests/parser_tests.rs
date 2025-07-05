@@ -17,7 +17,7 @@ fn parse_script(script: &str) -> Node {
 #[test]
 fn test_parser_simple_command() {
     let ast = parse_script("echo hello");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -36,7 +36,7 @@ fn test_parser_simple_command() {
 #[test]
 fn test_parser_command_with_args() {
     let ast = parse_script("ls -la /home");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -55,7 +55,7 @@ fn test_parser_command_with_args() {
 #[test]
 fn test_parser_pipeline() {
     let ast = parse_script("ls | grep test");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -73,12 +73,16 @@ fn test_parser_pipeline() {
 #[test]
 fn test_parser_if_statement() {
     let ast = parse_script("if [ -f file ]; then echo found; fi");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::IfStatement { condition, consequence, .. } => {
+                Node::IfStatement {
+                    condition,
+                    consequence,
+                    ..
+                } => {
                     // condition and consequence are Box<Node>, not Option
                     assert!(matches!(**condition, Node::Command { .. }));
                     assert!(matches!(**consequence, Node::List { .. }));
@@ -93,12 +97,16 @@ fn test_parser_if_statement() {
 #[test]
 fn test_parser_for_loop() {
     let ast = parse_script("for i in 1 2 3; do echo $i; done");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::ForLoop { variable, iterable, body } => {
+                Node::ForLoop {
+                    variable,
+                    iterable,
+                    body,
+                } => {
                     assert_eq!(variable, "i");
                     match &**iterable {
                         Node::List { statements, .. } => {
@@ -118,7 +126,7 @@ fn test_parser_for_loop() {
 #[test]
 fn test_parser_while_loop() {
     let ast = parse_script("while [ $i -lt 10 ]; do echo $i; done");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -137,12 +145,15 @@ fn test_parser_while_loop() {
 #[test]
 fn test_parser_case_statement() {
     let ast = parse_script("case $var in pattern1) echo one ;; pattern2) echo two ;; esac");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::CaseStatement { expression, patterns } => {
+                Node::CaseStatement {
+                    expression,
+                    patterns,
+                } => {
                     assert!(matches!(**expression, Node::StringLiteral(_)));
                     assert_eq!(patterns.len(), 2);
                 }
@@ -156,7 +167,7 @@ fn test_parser_case_statement() {
 #[test]
 fn test_parser_function_definition() {
     let ast = parse_script("function test_func() { echo hello; }");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -175,12 +186,16 @@ fn test_parser_function_definition() {
 #[test]
 fn test_parser_output_redirection() {
     let ast = parse_script("echo hello > output.txt");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::Command { name, args, redirects } => {
+                Node::Command {
+                    name,
+                    args,
+                    redirects,
+                } => {
                     assert_eq!(name, "echo");
                     assert_eq!(args, &vec!["hello".to_string()]);
                     assert_eq!(redirects.len(), 1);
@@ -197,12 +212,16 @@ fn test_parser_output_redirection() {
 #[test]
 fn test_parser_append_redirection() {
     let ast = parse_script("echo hello >> output.txt");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::Command { name, args, redirects } => {
+                Node::Command {
+                    name,
+                    args,
+                    redirects,
+                } => {
                     assert_eq!(name, "echo");
                     assert_eq!(args, &vec!["hello".to_string()]);
                     assert_eq!(redirects.len(), 1);
@@ -219,12 +238,16 @@ fn test_parser_append_redirection() {
 #[test]
 fn test_parser_input_redirection() {
     let ast = parse_script("cat < input.txt");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::Command { name, args, redirects } => {
+                Node::Command {
+                    name,
+                    args,
+                    redirects,
+                } => {
                     assert_eq!(name, "cat");
                     assert_eq!(args.len(), 0);
                     assert_eq!(redirects.len(), 1);
@@ -241,7 +264,7 @@ fn test_parser_input_redirection() {
 #[test]
 fn test_parser_background_command() {
     let ast = parse_script("sleep 5 &");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
@@ -260,12 +283,16 @@ fn test_parser_background_command() {
 #[test]
 fn test_parser_if_else_statement() {
     let ast = parse_script("if [ -f file ]; then echo found; else echo not found; fi");
-    
+
     match ast {
         Node::List { statements, .. } => {
             assert_eq!(statements.len(), 1);
             match &statements[0] {
-                Node::IfStatement { condition, consequence, alternative } => {
+                Node::IfStatement {
+                    condition,
+                    consequence,
+                    alternative,
+                } => {
                     assert!(matches!(**condition, Node::Command { .. }));
                     assert!(matches!(**consequence, Node::List { .. }));
                     assert!(alternative.is_some());
@@ -274,5 +301,126 @@ fn test_parser_if_else_statement() {
             }
         }
         _ => panic!("Expected list node"),
+    }
+}
+#[test]
+fn test_parse_arithmetic_command() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("(( 5 == 10 ))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+
+    // Check that we get an ArithmeticCommand node
+    if let Node::List { statements, .. } = ast {
+        assert_eq!(statements.len(), 1);
+        if let Node::ArithmeticCommand { expression } = &statements[0] {
+            println!("Expression: '{}'", expression);
+            assert!(expression.contains("5"));
+            assert!(expression.contains("10"));
+            assert!(expression.contains("=="));
+        } else {
+            panic!("Expected ArithmeticCommand, got {:?}", statements[0]);
+        }
+    } else {
+        panic!("Expected List, got {:?}", ast);
+    }
+}
+
+#[test]
+fn test_parse_equality_expression() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("(( 5 == 10 ))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+
+    // Check the exact expression string
+    if let Node::List { statements, .. } = ast {
+        if let Node::ArithmeticCommand { expression } = &statements[0] {
+            println!("Exact expression: '{}'", expression);
+            // Check that it contains ==, not separate = characters
+            assert!(expression.contains("=="));
+            assert!(!expression.contains("= ="));
+        }
+    }
+}
+
+#[test]
+fn test_parse_gte_expression() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("(( 3 >= 5 ))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+
+    // Check the exact expression string
+    if let Node::List { statements, .. } = ast {
+        if let Node::ArithmeticCommand { expression } = &statements[0] {
+            println!("Exact expression: '{}'", expression);
+            // Check that it contains >=
+            assert!(expression.contains(">="));
+        }
+    }
+}
+
+#[test]
+fn test_parse_nested_arithmetic() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("(( $((5 + 3)) > 7 ))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+
+    // Check what expression is being generated
+    if let Node::List { statements, .. } = ast {
+        println!("Number of statements: {}", statements.len());
+        for (i, stmt) in statements.iter().enumerate() {
+            println!("Statement {}: {:?}", i, stmt);
+        }
+    }
+}
+
+#[test]
+fn test_parse_arithmetic_expansion_with_vars() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("echo $((a * 2))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+}
+
+#[test]
+fn test_parse_deeply_nested() {
+    use flash::lexer::Lexer;
+    use flash::parser::{Node, Parser};
+
+    let lexer = Lexer::new("(( $((1 + $((2 * 3)))) == 7 ))");
+    let mut parser = Parser::new(lexer);
+
+    let ast = parser.parse_script();
+    println!("AST: {:?}", ast);
+
+    // Check what expression is being generated
+    if let Node::List { statements, .. } = ast {
+        println!("Number of statements: {}", statements.len());
+        for (i, stmt) in statements.iter().enumerate() {
+            println!("Statement {}: {:?}", i, stmt);
+        }
     }
 }

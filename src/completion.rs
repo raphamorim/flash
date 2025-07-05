@@ -11,7 +11,6 @@ use std::fs;
 use std::path::Path;
 
 /// Completion system for Flash shell
-/// Inspired by bash-completion and rusty_bash
 #[derive(Debug, Clone, Default)]
 pub struct CompletionSystem {
     /// Custom completion functions for specific commands
@@ -150,9 +149,9 @@ impl CompletionSystem {
 
         // Built-in commands
         let builtins = [
-            "cd", "echo", "export", "source", ".", "exit", "alias", "unalias",
-            "true", "false", "test", "[", "seq", "kill", "jobs", "bg", "fg",
-            "history", "which", "type", "help", "complete",
+            "cd", "echo", "export", "source", ".", "exit", "alias", "unalias", "true", "false",
+            "test", "[", "seq", "kill", "jobs", "bg", "fg", "history", "which", "type", "help",
+            "complete",
         ];
 
         for builtin in &builtins {
@@ -368,8 +367,8 @@ impl CompletionSystem {
 
         // Common environment variables
         let common_vars = [
-            "PATH", "HOME", "USER", "SHELL", "PWD", "OLDPWD", "PS1", "PS2",
-            "TERM", "LANG", "LC_ALL", "EDITOR", "PAGER", "MANPATH",
+            "PATH", "HOME", "USER", "SHELL", "PWD", "OLDPWD", "PS1", "PS2", "TERM", "LANG",
+            "LC_ALL", "EDITOR", "PAGER", "MANPATH",
         ];
 
         for var in &common_vars {
@@ -480,9 +479,9 @@ impl CompletionSystem {
         if context.cword == 1 {
             // Git subcommands
             let subcommands = [
-                "add", "branch", "checkout", "clone", "commit", "diff", "fetch",
-                "init", "log", "merge", "pull", "push", "rebase", "reset",
-                "status", "tag", "remote", "show", "stash", "config",
+                "add", "branch", "checkout", "clone", "commit", "diff", "fetch", "init", "log",
+                "merge", "pull", "push", "rebase", "reset", "status", "tag", "remote", "show",
+                "stash", "config",
             ];
 
             subcommands
@@ -587,7 +586,9 @@ impl CompletionSystem {
             });
 
             for path in manpath.split(':') {
-                for section in &["man1", "man2", "man3", "man4", "man5", "man6", "man7", "man8"] {
+                for section in &[
+                    "man1", "man2", "man3", "man4", "man5", "man6", "man7", "man8",
+                ] {
                     let section_path = format!("{}/{}", path, section);
                     if let Ok(entries) = fs::read_dir(section_path) {
                         for entry in entries.flatten() {
@@ -620,17 +621,15 @@ impl CompletionSystem {
     /// Parse command line into completion context
     pub fn parse_context(line: &str, point: usize) -> CompletionContext {
         let line_up_to_cursor = &line[..point.min(line.len())];
-        
+
         // Split by pipes, &&, || to find the current command segment
-        let segments: Vec<&str> = line_up_to_cursor
-            .split(&['|', '&'][..])
-            .collect();
-        
+        let segments: Vec<&str> = line_up_to_cursor.split(&['|', '&'][..]).collect();
+
         // Get the last segment (current command being completed)
         let current_segment = segments.last().unwrap_or(&"");
         let has_trailing_space = current_segment.ends_with(' ');
         let current_segment = current_segment.trim();
-        
+
         let words: Vec<String> = current_segment
             .split_whitespace()
             .map(|s| s.to_string())
@@ -675,7 +674,7 @@ mod tests {
     #[test]
     fn test_completion_system_new() {
         let system = CompletionSystem::new();
-        
+
         // Should have default completions set up
         assert!(system.command_completions.contains_key("git"));
         assert!(system.command_completions.contains_key("cd"));
@@ -735,7 +734,7 @@ mod tests {
     fn test_complete_commands_builtin() {
         let system = CompletionSystem::new();
         let completions = system.complete_commands("ec");
-        
+
         assert!(completions.contains(&"echo".to_string()));
         assert!(!completions.contains(&"git".to_string())); // Should not contain non-matching
     }
@@ -744,12 +743,12 @@ mod tests {
     fn test_complete_commands_empty_prefix() {
         let system = CompletionSystem::new();
         let completions = system.complete_commands("");
-        
+
         // Should contain all built-ins
         assert!(completions.contains(&"echo".to_string()));
         assert!(completions.contains(&"cd".to_string()));
         assert!(completions.contains(&"exit".to_string()));
-        
+
         // Should be sorted and deduplicated
         let mut sorted_completions = completions.clone();
         sorted_completions.sort();
@@ -761,7 +760,7 @@ mod tests {
     fn test_complete_files_current_directory() {
         let system = CompletionSystem::new();
         let completions = system.complete_files("");
-        
+
         // Should return some files/directories from current directory
         // We can't assert specific files since it depends on the test environment
         // But we can check that it doesn't crash and returns a Vec
@@ -772,10 +771,14 @@ mod tests {
     fn test_complete_directories() {
         let system = CompletionSystem::new();
         let completions = system.complete_directories("");
-        
+
         // All completions should end with '/'
         for completion in &completions {
-            assert!(completion.ends_with('/'), "Directory completion '{}' should end with '/'", completion);
+            assert!(
+                completion.ends_with('/'),
+                "Directory completion '{}' should end with '/'",
+                completion
+            );
         }
     }
 
@@ -783,15 +786,19 @@ mod tests {
     fn test_complete_variables() {
         let system = CompletionSystem::new();
         let completions = system.complete_variables("PA");
-        
+
         // Should include PATH if it exists
         if env::var("PATH").is_ok() {
             assert!(completions.contains(&"$PATH".to_string()));
         }
-        
+
         // All completions should start with $
         for completion in &completions {
-            assert!(completion.starts_with('$'), "Variable completion '{}' should start with $", completion);
+            assert!(
+                completion.starts_with('$'),
+                "Variable completion '{}' should start with $",
+                completion
+            );
         }
     }
 
@@ -799,7 +806,7 @@ mod tests {
     fn test_complete_variables_empty_prefix() {
         let system = CompletionSystem::new();
         let completions = system.complete_variables("");
-        
+
         // Should include common variables
         assert!(completions.contains(&"$PATH".to_string()));
         assert!(completions.contains(&"$HOME".to_string()));
@@ -809,7 +816,7 @@ mod tests {
     #[test]
     fn test_complete_by_action() {
         let system = CompletionSystem::new();
-        
+
         // Test command action
         let context = CompletionContext {
             line: "test".to_string(),
@@ -819,17 +826,17 @@ mod tests {
             current_word: "ec".to_string(),
             prev_word: "".to_string(),
         };
-        
+
         let completions = system.complete_by_action("command", &context);
         assert!(completions.contains(&"echo".to_string()));
-        
+
         // Test directory action
         let completions = system.complete_by_action("directory", &context);
         // Should only return directories (all end with /)
         for completion in &completions {
             assert!(completion.ends_with('/'));
         }
-        
+
         // Test unknown action
         let completions = system.complete_by_action("unknown", &context);
         assert!(completions.is_empty());
@@ -838,7 +845,7 @@ mod tests {
     #[test]
     fn test_git_completion() {
         let system = CompletionSystem::new();
-        
+
         // Test git subcommand completion
         let context = CompletionContext {
             line: "git ".to_string(),
@@ -848,12 +855,12 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "git".to_string(),
         };
-        
+
         let completions = system.complete_git(&context);
         assert!(completions.contains(&"add".to_string()));
         assert!(completions.contains(&"commit".to_string()));
         assert!(completions.contains(&"push".to_string()));
-        
+
         // Test partial git subcommand completion
         let context = CompletionContext {
             line: "git ad".to_string(),
@@ -863,7 +870,7 @@ mod tests {
             current_word: "ad".to_string(),
             prev_word: "git".to_string(),
         };
-        
+
         let completions = system.complete_git(&context);
         assert!(completions.contains(&"add".to_string()));
         assert!(!completions.contains(&"commit".to_string())); // Should not contain non-matching
@@ -872,7 +879,7 @@ mod tests {
     #[test]
     fn test_ssh_completion() {
         let system = CompletionSystem::new();
-        
+
         // Test ssh hostname completion
         let context = CompletionContext {
             line: "ssh ".to_string(),
@@ -882,7 +889,7 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "ssh".to_string(),
         };
-        
+
         let completions = system.complete_ssh(&context);
         // Should return hostnames (we can't assert specific ones)
         // But should not crash
@@ -892,37 +899,41 @@ mod tests {
     #[test]
     fn test_complete_integration() {
         let mut system = CompletionSystem::new();
-        
+
         // Test command completion (cword = 0)
         let context = CompletionSystem::parse_context("gi", 2);
         let completions = system.complete(&context);
-        
+
         // Should include git and other commands starting with 'gi'
         let has_git = completions.iter().any(|c| c == "git");
         assert!(has_git, "Should complete 'git' for 'gi' prefix");
-        
+
         // Test git subcommand completion
         let context = CompletionSystem::parse_context("git ", 4);
         let completions = system.complete(&context);
         assert!(completions.contains(&"add".to_string()));
-        
+
         // Test cd directory completion
         let context = CompletionSystem::parse_context("cd ", 3);
         let completions = system.complete(&context);
         // All completions should be directories (end with /)
         for completion in &completions {
-            assert!(completion.ends_with('/'), "CD completion '{}' should be a directory", completion);
+            assert!(
+                completion.ends_with('/'),
+                "CD completion '{}' should be a directory",
+                completion
+            );
         }
     }
 
     #[test]
     fn test_complete_unknown_command() {
         let mut system = CompletionSystem::new();
-        
+
         // Test completion for unknown command (should default to file completion)
         let context = CompletionSystem::parse_context("unknowncommand ", 15);
         let completions = system.complete(&context);
-        
+
         // Should return file completions (we can't assert specific files)
         // But should not crash
         assert!(completions.len() > 0 || completions.is_empty());
@@ -931,10 +942,10 @@ mod tests {
     #[test]
     fn test_complete_empty_context() {
         let mut system = CompletionSystem::new();
-        
+
         let context = CompletionSystem::parse_context("", 0);
         let completions = system.complete(&context);
-        
+
         // Should return empty for empty context
         assert!(completions.is_empty());
     }
@@ -958,7 +969,7 @@ mod tests {
             current_word: "test".to_string(),
             prev_word: "".to_string(),
         };
-        
+
         // Should be able to debug print without crashing
         let debug_str = format!("{:?}", context);
         assert!(debug_str.contains("test line"));
@@ -967,7 +978,7 @@ mod tests {
     #[test]
     fn test_man_completion() {
         let system = CompletionSystem::new();
-        
+
         let context = CompletionContext {
             line: "man ".to_string(),
             point: 4,
@@ -976,7 +987,7 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "man".to_string(),
         };
-        
+
         let completions = system.complete_man(&context);
         // Should return man page completions (we can't assert specific ones)
         // But should not crash
@@ -986,7 +997,7 @@ mod tests {
     #[test]
     fn test_kill_completion() {
         let system = CompletionSystem::new();
-        
+
         let context = CompletionContext {
             line: "kill ".to_string(),
             point: 5,
@@ -995,7 +1006,7 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "kill".to_string(),
         };
-        
+
         let completions = system.complete_kill(&context);
         // Should return process completions (we can't assert specific ones)
         // But should not crash and should be sorted/deduplicated
@@ -1009,7 +1020,7 @@ mod tests {
     fn test_complete_users() {
         let system = CompletionSystem::new();
         let completions = system.complete_users("r");
-        
+
         // Should return users starting with 'r' (like 'root' if it exists)
         // We can't assert specific users since it depends on the system
         // But should not crash and should be sorted/deduplicated
@@ -1017,10 +1028,14 @@ mod tests {
         sorted_completions.sort();
         sorted_completions.dedup();
         assert_eq!(completions, sorted_completions);
-        
+
         // All completions should start with the prefix
         for completion in &completions {
-            assert!(completion.starts_with('r'), "User completion '{}' should start with 'r'", completion);
+            assert!(
+                completion.starts_with('r'),
+                "User completion '{}' should start with 'r'",
+                completion
+            );
         }
     }
 
@@ -1028,7 +1043,7 @@ mod tests {
     fn test_complete_hostnames() {
         let system = CompletionSystem::new();
         let completions = system.complete_hostnames("local");
-        
+
         // Should return hostnames starting with 'local' (like 'localhost' if it exists)
         // We can't assert specific hostnames since it depends on the system
         // But should not crash and should be sorted/deduplicated
@@ -1036,17 +1051,21 @@ mod tests {
         sorted_completions.sort();
         sorted_completions.dedup();
         assert_eq!(completions, sorted_completions);
-        
+
         // All completions should start with the prefix
         for completion in &completions {
-            assert!(completion.starts_with("local"), "Hostname completion '{}' should start with 'local'", completion);
+            assert!(
+                completion.starts_with("local"),
+                "Hostname completion '{}' should start with 'local'",
+                completion
+            );
         }
     }
 
     #[test]
     fn test_git_branch_completion() {
         let system = CompletionSystem::new();
-        
+
         // Test git checkout completion (should complete branches)
         let context = CompletionContext {
             line: "git checkout ".to_string(),
@@ -1056,7 +1075,7 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "checkout".to_string(),
         };
-        
+
         let completions = system.complete_git(&context);
         // Should return branch completions (we can't assert specific branches)
         // But should not crash
@@ -1066,15 +1085,15 @@ mod tests {
     #[test]
     fn test_complete_files_with_prefix() {
         let system = CompletionSystem::new();
-        
+
         // Test file completion with a prefix
         let completions = system.complete_files("src");
-        
+
         // All completions should start with 'src' or be 'src/' if it's a directory
         for completion in &completions {
             assert!(
                 completion.starts_with("src") || completion == "src/",
-                "File completion '{}' should start with 'src'", 
+                "File completion '{}' should start with 'src'",
                 completion
             );
         }
@@ -1083,17 +1102,21 @@ mod tests {
     #[test]
     fn test_complete_files_with_tilde() {
         let system = CompletionSystem::new();
-        
+
         // Test file completion with tilde (should expand to home directory)
         let completions = system.complete_files("~/");
-        
+
         // Should handle tilde expansion without crashing
         assert!(completions.len() > 0 || completions.is_empty());
-        
+
         // If there are completions, they should preserve the tilde prefix
         for completion in &completions {
             if !completion.is_empty() {
-                assert!(completion.starts_with("~/"), "Tilde completion '{}' should start with '~/'", completion);
+                assert!(
+                    completion.starts_with("~/"),
+                    "Tilde completion '{}' should start with '~/'",
+                    completion
+                );
             }
         }
     }
@@ -1101,7 +1124,7 @@ mod tests {
     #[test]
     fn test_call_completion_function() {
         let system = CompletionSystem::new();
-        
+
         let context = CompletionContext {
             line: "git ".to_string(),
             point: 4,
@@ -1110,11 +1133,11 @@ mod tests {
             current_word: "".to_string(),
             prev_word: "git".to_string(),
         };
-        
+
         // Test known completion function
         let completions = system.call_completion_function("_git_complete", &context);
         assert!(completions.contains(&"add".to_string()));
-        
+
         // Test unknown completion function
         let completions = system.call_completion_function("_unknown_complete", &context);
         assert!(completions.is_empty());
