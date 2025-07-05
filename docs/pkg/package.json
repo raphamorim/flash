@@ -1,0 +1,15 @@
+{
+  "name": "flash-wasm-demo",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "flash_wasm_demo_bg.wasm",
+    "flash_wasm_demo.js",
+    "flash_wasm_demo.d.ts"
+  ],
+  "main": "flash_wasm_demo.js",
+  "types": "flash_wasm_demo.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

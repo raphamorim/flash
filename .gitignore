@@ -21,3 +21,7 @@ target/
 /target
 
 .DS_Store
+
+# WebAssembly demo build artifacts (except the final pkg directory)
+docs/target/
+# Allow docs/pkg/ to be committed (WASM files tracked by Git LFS)

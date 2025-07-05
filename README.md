@@ -170,6 +170,8 @@ export PAGER=less
 
 Flash provides comprehensive library functionality for integration into Rust applications, supporting multiple use cases including testing frameworks, shell script parsing, custom shell backend development, code formatting, and static analysis tooling.
 
+A WebAssembly version with interactive documentation and examples is available at [raphamorim.io/flash](https://raphamorim.io/flash).
+
 ### Interpreter Integration
 
 The Flash interpreter can be embedded directly into Rust applications:

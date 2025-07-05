@@ -36,4 +36,40 @@ test-case:
 test-all: test test-if test-case
 	@echo "All tests completed successfully!"
 
-.PHONY: all run dev lint test test-if test-case test-all
+# WebAssembly demo targets
+wasm-demo-build:
+	@echo "Building Flash WebAssembly Demo..."
+	@if ! command -v wasm-pack >/dev/null 2>&1; then \
+		echo "wasm-pack is not installed. Installing..."; \
+		curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh; \
+	fi
+	@echo "Building WebAssembly module..."
+	@cd docs && wasm-pack build --target web --out-dir pkg
+	@echo "Removing wasm-pack generated .gitignore to allow committing WASM files..."
+	@rm -f docs/pkg/.gitignore
+	@echo "Build complete!"
+	@echo "WASM files are tracked by Git LFS and can be committed."
+
+wasm-demo-serve: wasm-demo-build
+	@echo "Starting Flash WebAssembly Demo server..."
+	@echo "Open http://localhost:8000 in your browser"
+	@echo "Press Ctrl+C to stop the server"
+	@echo ""
+	@if ! command -v cargo-server >/dev/null 2>&1; then \
+		echo "Installing cargo-server..."; \
+		cargo install cargo-server; \
+	fi
+	@cd docs && cargo server --port 8000
+
+wasm-demo-clean:
+	@echo "Cleaning WebAssembly demo build artifacts..."
+	@rm -rf docs/pkg docs/target
+
+wasm-demo-commit: wasm-demo-build
+	@echo "Adding WebAssembly demo files to git..."
+	@git add docs/pkg/
+	@git add .gitattributes
+	@echo "WebAssembly files added to git (tracked by LFS)"
+	@echo "You can now commit with: git commit -m 'Add WebAssembly demo files'"
+
+.PHONY: all run dev lint test test-if test-case test-all wasm-demo-build wasm-demo-serve wasm-demo-clean wasm-demo-commit

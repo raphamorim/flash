@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Flash Shell Parser Demo</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            margin: 0;
+            padding: 20px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        
+        .container {
+            display: flex;
+            height: calc(100vh - 80px);
+            gap: 20px;
+        }
+        
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel h2 {
+            margin: 0 0 10px 0;
+            color: #569cd6;
+            font-size: 18px;
+        }
+        
+        .input-area {
+            height: 200px;
+            background-color: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 14px;
+            color: #d4d4d4;
+            resize: vertical;
+            outline: none;
+        }
+        
+        .output-area {
+            flex: 1;
+            background-color: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 14px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .success {
+            color: #4ec9b0;
+        }
+        
+        .error {
+            color: #f44747;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #569cd6;
+            margin: 0;
+        }
+        
+        .header p {
+            color: #9cdcfe;
+            margin: 5px 0 0 0;
+        }
+        
+        .header p a {
+            color: #9cdcfe;
+            text-decoration: none;
+            border: 1px solid #3e3e42;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        
+        .header p a:hover {
+            background-color: #2d2d30;
+            border-color: #569cd6;
+        }
+        
+        .parse-button {
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 10px;
+        }
+        
+        .parse-button:hover {
+            background-color: #1177bb;
+        }
+        
+        .examples {
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        
+        .example {
+            color: #608b4e;
+            cursor: pointer;
+            margin: 2px 0;
+        }
+        
+        .example:hover {
+            color: #7cb668;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Flash Shell Parser Demo</h1>
+        <p>WebAssembly-powered shell code parser</p>
+        <p><a href="https://github.com/raphamorim/flash" target="_blank" style="color: #9cdcfe; text-decoration: none;">View on GitHub</a></p>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Shell Code Input</h2>
+            <textarea id="input" class="input-area" placeholder="Enter shell code here...
+Examples:
+ls -la | grep test
+echo 'Hello World'
+for i in {1..10}; do echo $i; done
+if [ -f file.txt ]; then cat file.txt; fi"></textarea>
+            <button id="parseBtn" class="parse-button">Parse Code</button>
+            <div class="examples">
+                <div class="example" onclick="setExample('ls -la | grep test')">• ls -la | grep test</div>
+                <div class="example" onclick="setExample('echo \"Hello $USER\"')">• echo "Hello $USER"</div>
+                <div class="example" onclick="setExample('for i in {1..5}; do echo $i; done')">• for i in {1..5}; do echo $i; done</div>
+                <div class="example" onclick="setExample('if [ -f ~/.bashrc ]; then source ~/.bashrc; fi')">• if [ -f ~/.bashrc ]; then source ~/.bashrc; fi</div>
+                <div class="example" onclick="setExample('function greet() { echo \"Hello $1\"; }')">• function greet() { echo "Hello $1"; }</div>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Parser Output (AST)</h2>
+            <div id="output" class="output-area">Ready to parse shell code...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        let wasm;
+        
+        async function init() {
+            try {
+                // Import the WebAssembly module
+                const wasmModule = await import('./pkg/flash_wasm_demo.js');
+                await wasmModule.default();
+                wasm = wasmModule;
+                
+                console.log('Flash WebAssembly module loaded successfully');
+                
+                // Set up event listeners
+                document.getElementById('parseBtn').addEventListener('click', parseCode);
+                document.getElementById('input').addEventListener('keydown', function(e) {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                        parseCode();
+                    }
+                });
+                
+                // Parse initial example
+                setExample('ls -la | grep test');
+                parseCode();
+                
+            } catch (error) {
+                console.error('Failed to load WebAssembly module:', error);
+                document.getElementById('output').textContent = `Failed to load WebAssembly module: ${error.message}`;
+                document.getElementById('output').className = 'output-area error';
+            }
+        }
+        
+        function parseCode() {
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            
+            if (!wasm) {
+                output.textContent = 'WebAssembly module not loaded yet. Please wait...';
+                output.className = 'output-area error';
+                return;
+            }
+            
+            if (!input.trim()) {
+                output.textContent = 'Please enter some shell code to parse.';
+                output.className = 'output-area';
+                return;
+            }
+            
+            try {
+                const result = wasm.parse_shell_code(input);
+                
+                if (result.success) {
+                    output.textContent = result.ast;
+                    output.className = 'output-area success';
+                } else {
+                    output.textContent = `Error: ${result.error}`;
+                    output.className = 'output-area error';
+                }
+            } catch (e) {
+                console.error('Parse error:', e);
+                output.textContent = `JavaScript Error: ${e.message}`;
+                output.className = 'output-area error';
+            }
+        }
+        
+        window.setExample = function(example) {
+            document.getElementById('input').value = example;
+        };
+        
+        // Initialize when the page loads
+        init();
+    </script>
+</body>
+</html>
