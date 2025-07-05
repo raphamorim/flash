@@ -31,6 +31,14 @@ pub enum TokenKind {
     Comment,         // #
     CmdSubst,        // $(
     ArithSubst,      // $((
+    ParamExpansion,  // ${
+    ParamExpansionOp(String), // :-, :=, :?, :+, #, ##, %, %%
+    ProcessSubstIn,  // <(
+    ProcessSubstOut, // >(
+    HereDoc,         // << followed by delimiter
+    HereDocDash,     // <<- followed by delimiter
+    HereDocContent(String), // Content of here-document
+    HereString,      // <<<
     ExtGlob(char),   // For ?(, *(, +(, @(, !(
     // Shell control flow keywords
     If,   // if keyword
@@ -344,17 +352,64 @@ impl Lexer {
                 value: "}".to_string(),
                 position: current_position,
             },
-            '<' => Token {
-                kind: TokenKind::Less,
-                value: "<".to_string(),
-                position: current_position,
-            },
+            '<' => {
+                if self.peek_char() == '(' {
+                    // Process substitution <(
+                    self.read_char(); // Consume '('
+                    Token {
+                        kind: TokenKind::ProcessSubstIn,
+                        value: "<(".to_string(),
+                        position: current_position,
+                    }
+                } else if self.peek_char() == '<' {
+                    // Here document << or <<-
+                    self.read_char(); // Consume second '<'
+                    if self.peek_char() == '<' {
+                        // Here string <<<
+                        self.read_char(); // Consume third '<'
+                        Token {
+                            kind: TokenKind::HereString,
+                            value: "<<<".to_string(),
+                            position: current_position,
+                        }
+                    } else if self.peek_char() == '-' {
+                        // Here document with dash <<-
+                        self.read_char(); // Consume '-'
+                        Token {
+                            kind: TokenKind::HereDocDash,
+                            value: "<<-".to_string(),
+                            position: current_position,
+                        }
+                    } else {
+                        // Regular here document <<
+                        Token {
+                            kind: TokenKind::HereDoc,
+                            value: "<<".to_string(),
+                            position: current_position,
+                        }
+                    }
+                } else {
+                    Token {
+                        kind: TokenKind::Less,
+                        value: "<".to_string(),
+                        position: current_position,
+                    }
+                }
+            }
             '>' => {
                 if self.peek_char() == '>' {
                     self.read_char();
                     Token {
                         kind: TokenKind::DGreat,
                         value: ">>".to_string(),
+                        position: current_position,
+                    }
+                } else if self.peek_char() == '(' {
+                    // Process substitution >(
+                    self.read_char(); // Consume '('
+                    Token {
+                        kind: TokenKind::ProcessSubstOut,
+                        value: ">(".to_string(),
                         position: current_position,
                     }
                 } else {
@@ -450,6 +505,14 @@ impl Lexer {
                             value: "$(".to_string(),
                             position: current_position,
                         }
+                    }
+                } else if self.peek_char() == '{' {
+                    // Parameter expansion ${
+                    self.read_char(); // Consume the '{'
+                    Token {
+                        kind: TokenKind::ParamExpansion,
+                        value: "${".to_string(),
+                        position: current_position,
                     }
                 } else {
                     Token {
@@ -1225,6 +1288,178 @@ impl Lexer {
         while self.ch.is_whitespace() && self.ch != '\n' {
             self.read_char();
         }
+    }
+
+    // Parse parameter expansion content after ${
+    pub fn read_parameter_expansion(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        let start_position = Position::new(self.line, self.column);
+        
+        // Skip whitespace
+        self.skip_whitespace();
+        
+        // Handle special cases first
+        if self.ch == '!' {
+            // Indirect expansion ${!var}
+            tokens.push(Token {
+                kind: TokenKind::Word("!".to_string()),
+                value: "!".to_string(),
+                position: start_position,
+            });
+            self.read_char();
+            self.skip_whitespace();
+        } else if self.ch == '#' {
+            // Length expansion ${#var} or prefix removal ${var#pattern}
+            let pos = Position::new(self.line, self.column);
+            self.read_char();
+            
+            // Check if this is length expansion (# followed by variable name)
+            if self.ch.is_alphabetic() || self.ch == '_' {
+                tokens.push(Token {
+                    kind: TokenKind::Word("#".to_string()),
+                    value: "#".to_string(),
+                    position: pos,
+                });
+            } else {
+                // This might be prefix removal, put # back for later processing
+                self.position -= 1;
+                self.read_position -= 1;
+                self.column -= 1;
+                self.ch = '#';
+            }
+        }
+        
+        // Read variable name
+        if self.ch.is_alphabetic() || self.ch == '_' || self.ch.is_ascii_digit() {
+            let var_token = self.read_word();
+            tokens.push(var_token);
+        }
+        
+        // Skip whitespace
+        self.skip_whitespace();
+        
+        // Check for parameter expansion operators
+        if self.ch == ':' {
+            let op_start = Position::new(self.line, self.column);
+            let mut op = String::new();
+            op.push(self.ch);
+            self.read_char();
+            
+            // Read the operator character(s)
+            match self.ch {
+                '-' | '=' | '?' | '+' => {
+                    op.push(self.ch);
+                    self.read_char();
+                }
+                _ => {
+                    // Just a colon, might be for substring ${var:offset:length}
+                }
+            }
+            
+            tokens.push(Token {
+                kind: TokenKind::ParamExpansionOp(op.clone()),
+                value: op,
+                position: op_start,
+            });
+        } else if self.ch == '#' {
+            // Prefix removal
+            let op_start = Position::new(self.line, self.column);
+            let mut op = String::new();
+            op.push(self.ch);
+            self.read_char();
+            
+            // Check for ## (longest prefix removal)
+            if self.ch == '#' {
+                op.push(self.ch);
+                self.read_char();
+            }
+            
+            tokens.push(Token {
+                kind: TokenKind::ParamExpansionOp(op.clone()),
+                value: op,
+                position: op_start,
+            });
+        } else if self.ch == '%' {
+            // Suffix removal
+            let op_start = Position::new(self.line, self.column);
+            let mut op = String::new();
+            op.push(self.ch);
+            self.read_char();
+            
+            // Check for %% (longest suffix removal)
+            if self.ch == '%' {
+                op.push(self.ch);
+                self.read_char();
+            }
+            
+            tokens.push(Token {
+                kind: TokenKind::ParamExpansionOp(op.clone()),
+                value: op,
+                position: op_start,
+            });
+        }
+        
+        // Read the rest of the content until }
+        while self.ch != '}' && self.ch != '\0' {
+            if self.ch.is_whitespace() {
+                self.skip_whitespace();
+                continue;
+            }
+            
+            let token = self.read_word();
+            tokens.push(token);
+        }
+        
+        tokens
+    }
+
+    // Parse here-document content
+    pub fn read_here_document(&mut self, delimiter: &str, dash_variant: bool) -> String {
+        let mut content = String::new();
+        let mut line = String::new();
+        
+        // Skip to next line
+        while self.ch != '\n' && self.ch != '\0' {
+            self.read_char();
+        }
+        if self.ch == '\n' {
+            self.read_char();
+        }
+        
+        loop {
+            line.clear();
+            
+            // Read a complete line
+            while self.ch != '\n' && self.ch != '\0' {
+                line.push(self.ch);
+                self.read_char();
+            }
+            
+            // Check if this line is the delimiter
+            let trimmed_line = if dash_variant {
+                line.trim_start() // <<- removes leading tabs
+            } else {
+                &line
+            };
+            
+            if trimmed_line == delimiter {
+                break;
+            }
+            
+            // Add the line to content
+            content.push_str(&line);
+            if self.ch == '\n' {
+                content.push('\n');
+                self.read_char();
+            }
+            
+            // Check for EOF
+            if self.ch == '\0' {
+                break;
+            }
+        }
+        
+        content
     }
 }
 
@@ -2471,8 +2706,7 @@ mod lexer_tests {
             TokenKind::Word("echo".to_string()),
             TokenKind::Dollar,
             TokenKind::Word("HOME".to_string()),
-            TokenKind::Dollar,
-            TokenKind::LBrace,
+            TokenKind::ParamExpansion,
             TokenKind::Word("USER".to_string()),
             TokenKind::RBrace,
             TokenKind::ArithSubst,
@@ -2490,16 +2724,13 @@ mod lexer_tests {
         let input = "echo ${array[0]} ${array[@]} ${#array[@]}";
         let expected = vec![
             TokenKind::Word("echo".to_string()),
-            TokenKind::Dollar,
-            TokenKind::LBrace,
+            TokenKind::ParamExpansion,
             TokenKind::Word("array[0]".to_string()),
             TokenKind::RBrace,
-            TokenKind::Dollar,
-            TokenKind::LBrace,
+            TokenKind::ParamExpansion,
             TokenKind::Word("array[@]".to_string()),
             TokenKind::RBrace,
-            TokenKind::Dollar,
-            TokenKind::LBrace,
+            TokenKind::ParamExpansion,
             TokenKind::Comment,
         ];
         test_tokens(input, expected);
@@ -2995,4 +3226,5 @@ mod lexer_tests {
         ];
         test_tokens(input, expected);
     }
+
 }

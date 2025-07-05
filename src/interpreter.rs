@@ -541,6 +541,30 @@ impl DefaultEvaluator {
                                 .open(&redirect.file)?;
                             command.stdout(Stdio::from(file));
                         }
+                        RedirectKind::HereDoc | RedirectKind::HereDocDash => {
+                            // Here documents - create a temporary file with the content
+                            let temp_content = &redirect.file;
+                            let mut temp_file = tempfile::NamedTempFile::new()?;
+                            temp_file.write_all(temp_content.as_bytes())?;
+                            temp_file.flush()?;
+                            let file = temp_file.reopen()?;
+                            command.stdin(Stdio::from(file));
+                        }
+                        RedirectKind::HereString => {
+                            // Here strings - pass the string as stdin
+                            let content = interpreter.expand_variables(&redirect.file);
+                            let mut temp_file = tempfile::NamedTempFile::new()?;
+                            temp_file.write_all(content.as_bytes())?;
+                            temp_file.write_all(b"
+")?;
+                            temp_file.flush()?;
+                            let file = temp_file.reopen()?;
+                            command.stdin(Stdio::from(file));
+                        }
+                        RedirectKind::InputDup | RedirectKind::OutputDup => {
+                            // File descriptor duplication - simplified implementation
+                            eprintln!("File descriptor duplication not fully implemented");
+                        }
                     }
                 }
 

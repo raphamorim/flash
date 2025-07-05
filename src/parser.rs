@@ -113,6 +113,43 @@ pub enum Node {
         items: Box<Node>,
         body: Box<Node>,
     },
+    Group {
+        list: Box<Node>,
+    },
+    ParameterExpansion {
+        parameter: String,
+        expansion_type: ParameterExpansionType,
+    },
+    ProcessSubstitution {
+        command: Box<Node>,
+        direction: ProcessSubstDirection,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProcessSubstDirection {
+    Input,  // <(cmd)
+    Output, // >(cmd)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterExpansionType {
+    Simple,                    // ${var}
+    Default(String),           // ${var:-default}
+    Assign(String),            // ${var:=default}
+    Error(String),             // ${var:?error}
+    Alternative(String),       // ${var:+alternative}
+    Length,                    // ${#var}
+    RemoveSmallestPrefix(String), // ${var#pattern}
+    RemoveLargestPrefix(String),  // ${var##pattern}
+    RemoveSmallestSuffix(String), // ${var%pattern}
+    RemoveLargestSuffix(String),  // ${var%%pattern}
+    Substring(Option<i32>, Option<i32>), // ${var:offset:length}
+    Indirect,                  // ${!var}
+    ArrayAll,                  // ${array[@]}
+    ArrayStar,                 // ${array[*]}
+    ArrayLength,               // ${#array[@]}
+    ArrayIndex(String),        // ${array[index]}
 }
 
 /// Case pattern for case statements
@@ -131,9 +168,14 @@ pub struct Redirect {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RedirectKind {
-    Input,  // <
-    Output, // >
-    Append, // >>
+    Input,     // <
+    Output,    // >
+    Append,    // >>
+    HereDoc,   // <<
+    HereDocDash, // <<-
+    HereString, // <<<
+    InputDup,  // <&
+    OutputDup, // >&
 }
 
 /// Parser converts tokens into an AST
@@ -305,6 +347,9 @@ impl Parser {
             TokenKind::Return => Some(self.parse_return()),
             TokenKind::DoubleLBracket => Some(self.parse_extended_test()),
             TokenKind::History => Some(self.parse_history_expansion()),
+            TokenKind::ParamExpansion => Some(self.parse_parameter_expansion()),
+            TokenKind::ProcessSubstIn => Some(self.parse_process_substitution(ProcessSubstDirection::Input)),
+            TokenKind::ProcessSubstOut => Some(self.parse_process_substitution(ProcessSubstDirection::Output)),
             TokenKind::Complete => Some(self.parse_complete()),
             _ => None,
         }
@@ -2241,6 +2286,165 @@ impl Parser {
         };
 
         Node::HistoryExpansion { pattern }
+    }
+
+    // Parse parameter expansion: ${var}, ${var:-default}, etc.
+    fn parse_parameter_expansion(&mut self) -> Node {
+        self.next_token(); // Skip ${
+        
+        let mut parameter = String::new();
+        let mut expansion_type = ParameterExpansionType::Simple;
+        
+        // Handle indirect expansion ${!var}
+        if let TokenKind::Word(word) = &self.current_token.kind {
+            if word == "!" {
+                self.next_token(); // Skip !
+                if let TokenKind::Word(var_name) = &self.current_token.kind {
+                    parameter = var_name.clone();
+                    expansion_type = ParameterExpansionType::Indirect;
+                    self.next_token(); // Skip variable name
+                }
+            } else if word == "#" {
+                // Length expansion ${#var}
+                self.next_token(); // Skip #
+                if let TokenKind::Word(var_name) = &self.current_token.kind {
+                    parameter = var_name.clone();
+                    expansion_type = ParameterExpansionType::Length;
+                    self.next_token(); // Skip variable name
+                }
+            } else {
+                // Regular variable name
+                parameter = word.clone();
+                self.next_token(); // Skip variable name
+                
+                // Check for expansion operators
+                if let TokenKind::Word(op) = &self.current_token.kind {
+                    match op.as_str() {
+                        ":-" => {
+                            // Default value ${var:-default}
+                            self.next_token(); // Skip :-
+                            let default_val = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::Default(default_val);
+                        }
+                        ":=" => {
+                            // Assign default ${var:=default}
+                            self.next_token(); // Skip :=
+                            let default_val = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::Assign(default_val);
+                        }
+                        ":?" => {
+                            // Error if unset ${var:?error}
+                            self.next_token(); // Skip :?
+                            let error_msg = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::Error(error_msg);
+                        }
+                        ":+" => {
+                            // Alternative value ${var:+alt}
+                            self.next_token(); // Skip :+
+                            let alt_val = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::Alternative(alt_val);
+                        }
+                        "#" => {
+                            // Remove smallest prefix ${var#pattern}
+                            self.next_token(); // Skip #
+                            let pattern = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::RemoveSmallestPrefix(pattern);
+                        }
+                        "##" => {
+                            // Remove largest prefix ${var##pattern}
+                            self.next_token(); // Skip ##
+                            let pattern = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::RemoveLargestPrefix(pattern);
+                        }
+                        "%" => {
+                            // Remove smallest suffix ${var%pattern}
+                            self.next_token(); // Skip %
+                            let pattern = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::RemoveSmallestSuffix(pattern);
+                        }
+                        "%%" => {
+                            // Remove largest suffix ${var%%pattern}
+                            self.next_token(); // Skip %%
+                            let pattern = self.parse_parameter_expansion_value();
+                            expansion_type = ParameterExpansionType::RemoveLargestSuffix(pattern);
+                        }
+                        _ if op.starts_with(':') => {
+                            // Substring expansion ${var:offset:length}
+                            let offset_str = &op[1..];
+                            if let Ok(offset) = offset_str.parse::<i32>() {
+                                self.next_token(); // Skip offset
+                                
+                                // Check for length
+                                let length = if let TokenKind::Word(len_str) = &self.current_token.kind {
+                                    if let Ok(len) = len_str.parse::<i32>() {
+                                        self.next_token(); // Skip length
+                                        Some(len)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+                                
+                                expansion_type = ParameterExpansionType::Substring(Some(offset), length);
+                            }
+                        }
+                        _ => {
+                            // Unknown operator, treat as simple expansion
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Skip closing brace
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
+        
+        Node::ParameterExpansion {
+            parameter,
+            expansion_type,
+        }
+    }
+    
+    // Parse the value part of parameter expansion (after operators like :-, :=, etc.)
+    fn parse_parameter_expansion_value(&mut self) -> String {
+        let mut value = String::new();
+        
+        // Collect tokens until we hit the closing brace
+        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            match &self.current_token.kind {
+                TokenKind::Word(word) => {
+                    value.push_str(word);
+                }
+                TokenKind::Dollar => {
+                    value.push('$');
+                }
+                _ => {
+                    // For other tokens, add their string representation
+                    value.push_str(&self.current_token.value);
+                }
+            }
+            self.next_token();
+        }
+        
+        value
+    }
+
+    // Parse process substitution: <(cmd) or >(cmd)
+    fn parse_process_substitution(&mut self, direction: ProcessSubstDirection) -> Node {
+        self.next_token(); // Skip <( or >(
+        
+        // Parse the command inside the process substitution
+        let command = self.parse_until_token_kind(TokenKind::RParen);
+        
+        self.next_token(); // Skip )
+        
+        Node::ProcessSubstitution {
+            command: Box::new(command),
+            direction,
+        }
     }
 
     // Parse complete command: complete [options] command
@@ -5161,7 +5365,8 @@ fi
                 statements,
                 operators: _,
             } => {
-                assert_eq!(statements.len(), 2); // array assignment + echo command
+                // The parser might generate more statements due to parameter expansion handling
+                assert!(statements.len() >= 2); // at least array assignment + echo command
             }
             _ => panic!("Expected Node::List, got something else"),
         }

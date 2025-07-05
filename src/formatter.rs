@@ -271,6 +271,11 @@ impl Formatter {
                         RedirectKind::Input => "<",
                         RedirectKind::Output => ">",
                         RedirectKind::Append => ">>",
+                        RedirectKind::HereDoc => "<<",
+                        RedirectKind::HereDocDash => "<<-",
+                        RedirectKind::HereString => "<<<",
+                        RedirectKind::InputDup => "<&",
+                        RedirectKind::OutputDup => ">&",
                     };
 
                     if self.config.space_redirects {

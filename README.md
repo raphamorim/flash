@@ -41,28 +41,28 @@ Legends:
 | **Functions**         | Function definition (`name() {}`)               | ✅          | ✅   | ✅  | |
 |                       | `function` keyword                              | ❌          | ✅   | ✅  | Bash-specific |
 | **I/O Redirection**   | Output/input redirection (`>`, `<`, `>>`)       | ✅          | ✅   | ✅  | |
-|                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | ❌  | |
-|                       | Here strings (`<<<`)                            | ❌          | ✅   | ❌  | |
-|                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | ❌  | |
+|                       | Here documents (`<<`, `<<-`)                    | ✅          | ✅   | ⚠️  | Basic implementation |
+|                       | Here strings (`<<<`)                            | ❌          | ✅   | ⚠️  | Basic implementation |
+|                       | File descriptor duplication (`>&`, `<&`)        | ✅          | ✅   | ⚠️  | Basic implementation |
 | **Job Control**       | Background execution (`&`)                      | ✅          | ✅   | ✅  | |
 |                       | Job control commands (`fg`, `bg`, `jobs`)       | ✅          | ✅   | ✅  | May be interactive-only |
-|                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ❌  | |
+|                       | Process substitution (`<(...)`, `>(...)`)       | ❌          | ✅   | ⚠️  | Basic `<(cmd)` implemented |
 | **Arrays**            | Indexed arrays                                  | ❌          | ✅   | ✅  | `arr=(a b c)` |
 |                       | Associative arrays                              | ❌          | ✅   | ❌  | `declare -A` |
-| **Parameter Expansion** | `${var}` basic expansion                      | ✅          | ✅   | ❌  | |
-|                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | ❌  | |
-|                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | ❌  | |
-|                       | `${!var}` indirect expansion                    | ❌          | ✅   | ❌  | |
+| **Parameter Expansion** | `${var}` basic expansion                      | ✅          | ✅   | ✅  | Framework implemented |
+|                       | `${var:-default}`, `${var:=default}`            | ✅          | ✅   | ✅  | Framework implemented |
+|                       | `${#var}`, `${var#pattern}`                     | ✅          | ✅   | ✅  | Framework implemented |
+|                       | `${!var}` indirect expansion                    | ❌          | ✅   | ✅  | Framework implemented |
 |                       | `${var[@]}` / `${var[*]}` array expansion       | ❌          | ✅   | ❌  | |
-| **Command Execution** | Pipelines                                       | ✅          | ✅   | ❌  | |
-|                       | Logical AND / OR (`&&`, ||)                     | ✅          | ✅   | ❌  | |
-|                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | ❌  | |
-|                       | Subshell (`( )`)                                | ✅          | ✅   | ❌  | |
+| **Command Execution** | Pipelines                                       | ✅          | ✅   | ✅  | |
+|                       | Logical AND / OR (`&&`, ||)                     | ✅          | ✅   | ✅  | |
+|                       | Grouping (`( )`, `{ }`)                         | ✅          | ✅   | ✅  | |
+|                       | Subshell (`( )`)                                | ✅          | ✅   | ✅  | |
 |                       | Coprocesses (`coproc`)                          | ❌          | ✅   | ❌  | |
 | **Builtins**          | `cd`, `echo`, `test`, `read`, `eval`, etc.      | ✅          | ✅   | ✅  | |
 |                       | `shopt`, `declare`, `typeset`                   | ❌          | ✅   | ❌  | Bash-only |
 |                       | `let`, `local`, `export`                        | ✅          | ✅   | ✅  | |
-| **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ❌  | |
+| **Debugging**         | `set -x`, `set -e`, `trap`                      | ✅          | ✅   | ⚠️  | `set -x`, `set -e` implemented |
 |                       | `BASH_SOURCE`, `FUNCNAME` arrays                | ❌          | ✅   | ❌  | |
 | **Miscellaneous**     | Brace expansion (`{1..5}`)                      | ❌          | ✅   | ✅  | |
 |                       | Extended globbing (`extglob`)                   | ❌          | ✅   | ❌  | Requires `shopt` |

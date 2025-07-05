@@ -17,14 +17,14 @@ path = "src/bin.rs"
 [features]
 default = ["formatter", "interpreter"]
 formatter = []
-interpreter = ["regex", "libc"]
+interpreter = ["regex", "libc", "tempfile"]
 
 [dependencies]
 regex = { version = "1.11.1", optional = true }
 libc = { version = "0.2", optional = true }
+tempfile = { version = "3.19.1", optional = true }
 
 [dev-dependencies]
-tempfile = "3.19.1"
 pretty_assertions = "1.4.1"
 criterion = { version = "0.5", features = ["html_reports"] }
 
