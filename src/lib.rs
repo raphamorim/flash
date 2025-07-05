@@ -12,10 +12,12 @@ pub mod parser;
 // mod simd;
 
 #[cfg(feature = "interpreter")]
-mod flash;
+pub mod flash;
 #[cfg(feature = "formatter")]
 pub mod formatter;
 #[cfg(feature = "interpreter")]
 pub mod interpreter;
 #[cfg(feature = "interpreter")]
 pub mod completion;
+#[cfg(feature = "interpreter")]
+pub mod environment_integration;
