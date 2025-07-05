@@ -48,7 +48,7 @@ wasm-demo-build:
 	@echo "Removing wasm-pack generated .gitignore to allow committing WASM files..."
 	@rm -f docs/pkg/.gitignore
 	@echo "Build complete!"
-	@echo "WASM files are tracked by Git LFS and can be committed."
+	@echo "WASM files can be committed directly to git."
 
 wasm-demo-serve: wasm-demo-build
 	@echo "Starting Flash WebAssembly Demo server..."
@@ -68,8 +68,7 @@ wasm-demo-clean:
 wasm-demo-commit: wasm-demo-build
 	@echo "Adding WebAssembly demo files to git..."
 	@git add docs/pkg/
-	@git add .gitattributes
-	@echo "WebAssembly files added to git (tracked by LFS)"
+	@echo "WebAssembly files added to git"
 	@echo "You can now commit with: git commit -m 'Add WebAssembly demo files'"
 
 .PHONY: all run dev lint test test-if test-case test-all wasm-demo-build wasm-demo-serve wasm-demo-clean wasm-demo-commit
