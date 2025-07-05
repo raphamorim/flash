@@ -17,3 +17,5 @@ mod flash;
 pub mod formatter;
 #[cfg(feature = "interpreter")]
 pub mod interpreter;
+#[cfg(feature = "interpreter")]
+pub mod completion;
