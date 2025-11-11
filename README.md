@@ -54,7 +54,7 @@ The following table provides a comprehensive overview of POSIX Shell and Bash fe
 |                       | `${!var}` indirect expansion                    | Not Supported          | Fully Supported   | Fully Supported  | Variable indirection |
 |                       | `${var[@]}` / `${var[*]}` array expansion       | Not Supported          | Fully Supported   | Not Supported  | Array element expansion |
 | **Command Execution** | Pipelines                                       | Fully Supported          | Fully Supported   | Fully Supported  | Command chaining |
-|                       | Logical AND / OR (`&&`, `||`)                     | Fully Supported          | Fully Supported   | Fully Supported  | Conditional execution |
+|                       | Logical AND / OR (`&&`, `\|\|`)                     | Fully Supported          | Fully Supported   | Fully Supported  | Conditional execution |
 |                       | Grouping (`( )`, `{ }`)                         | Fully Supported          | Fully Supported   | Fully Supported  | Command grouping |
 |                       | Subshell (`( )`)                                | Fully Supported          | Fully Supported   | Fully Supported  | Isolated execution context |
 |                       | Coprocesses (`coproc`)                          | Not Supported          | Fully Supported   | Not Supported  | Bidirectional pipes |
